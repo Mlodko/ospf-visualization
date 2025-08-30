@@ -17,14 +17,14 @@
     },
     "nixpkgs-src": {
       "locked": {
-        "lastModified": 1755922037,
-        "narHash": "sha256-wY1+2JPH0ZZC4BQefoZw/k+3+DowFyfOxv17CN/idKs=",
+        "lastModified": 1756386758,
+        "narHash": "sha256-1wxxznpW2CKvI9VdniaUnTT2Os6rdRJcRUf65ZK9OtE=",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz"
+        "url": "https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz"
       },
       "original": {
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz"
+        "url": "https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz"
       }
     },
     "root": {
