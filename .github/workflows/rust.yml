@@ -16,8 +16,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install libraries
-      run: apt install net-snmp
+    - name: Enter flake environment
+      run: nix develop
     - name: Build
       run: cargo build --verbose
     - name: Run tests
