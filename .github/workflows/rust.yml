@@ -21,10 +21,8 @@ jobs:
       with:
         extra_nix_config: |
           experimental-features = nix-command flakes
-    - name: Test entering flake environment
-      run: nix develop
     - name: Build
       run: nix develop --command cargo build
     - name: Run tests
-      run: cargo test --command cargo test
+      run: nix develop --command cargo test
           
