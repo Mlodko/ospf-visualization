@@ -4,5 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ipnetwork = "0.21.1"
+ospf-parser = "0.5.0"
+petgraph = "0.8.3"
 snmp2 = { version = "0.4.8", features = ["full"] }
 tokio = { version = "1.47.1", features = ["full"] }
+uuid = { version = "1.18.1", features = ["v5"] }

@@ -7,7 +7,8 @@ use snmp2::{AsyncSession, MessageType, Oid, Version, v3::Security};
 use std::{error::Error, fmt::Display, net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
-struct SnmpClient {
+/// SNMP client for retrieving data from a network device.
+pub struct SnmpClient {
     address: SocketAddr,
     community: String,
     snmp_version: Version,
@@ -16,22 +17,24 @@ struct SnmpClient {
 }
 
 impl SnmpClient {
+    /// Creates a new SNMP client for a single network device.
     pub fn new(
         address: SocketAddr,
-        community: String,
+        community: &str,
         snmp_version: Version,
         security: Option<Security>,
     ) -> Self {
         Self {
             address,
-            community,
+            community: community.to_string(),
             snmp_version,
             session: None,
             security,
         }
     }
 
-    async fn get_session(&mut self) -> Result<Arc<Mutex<AsyncSession>>, SnmpClientError> {
+    /// Retrieves an SNMP session for the client.
+    pub async fn get_session(&mut self) -> Result<Arc<Mutex<AsyncSession>>, SnmpClientError> {
         if self.session.is_none() {
             let session = match self.snmp_version {
                 Version::V1 => {
@@ -59,7 +62,8 @@ impl SnmpClient {
             Ok(self.session.as_ref().unwrap().clone())
         }
     }
-
+    
+    /// Start building a new query.
     pub async fn query(&mut self) -> Result<QueryBuilder<'_>, SnmpClientError> {
         let session = self.get_session().await?;
         Ok(QueryBuilder {
@@ -73,7 +77,7 @@ impl SnmpClient {
     }
 }
 
-struct QueryBuilder<'a> {
+pub struct QueryBuilder<'a> {
     session: Arc<Mutex<AsyncSession>>,
     oids: Vec<Oid<'a>>,
     operation: Option<MessageType>,
@@ -83,44 +87,44 @@ struct QueryBuilder<'a> {
 }
 
 impl<'a> QueryBuilder<'a> {
-    fn get(mut self) -> Self {
+    pub fn get(mut self) -> Self {
         self.operation = Some(MessageType::GetRequest);
         self
     }
 
-    fn get_next(mut self) -> Self {
+    pub fn get_next(mut self) -> Self {
         self.operation = Some(MessageType::GetNextRequest);
         self
     }
 
-    fn get_bulk(mut self, non_repeaters: u32, max_repetitions: u32) -> Self {
+    pub fn get_bulk(mut self, non_repeaters: u32, max_repetitions: u32) -> Self {
         self.operation = Some(MessageType::GetBulkRequest);
         self.non_repeaters = Some(non_repeaters);
         self.max_repetitions = Some(max_repetitions);
         self
     }
 
-    fn timeout(mut self, timeout: Duration) -> Self {
+    pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
 
-    fn oid(mut self, oid: Oid<'static>) -> Self {
+    pub fn oid(mut self, oid: Oid<'static>) -> Self {
         self.oids.push(oid);
         self
     }
 
-    fn oids(mut self, oids: Vec<Oid<'static>>) -> Self {
+    pub fn oids(mut self, oids: Vec<Oid<'static>>) -> Self {
         self.oids.extend(oids);
         self
     }
 
-    fn oid_str(self, oid_str: &str) -> Result<Self, SnmpClientError> {
+    pub fn oid_str(self, oid_str: &str) -> Result<Self, SnmpClientError> {
         let oid = Oid::from_str(oid_str).map_err(|_| SnmpClientError::OidParseError)?;
         Ok(self.oid(oid))
     }
 
-    async fn execute(self) -> Result<Vec<super::core::RawRouterData<'a>>, SnmpClientError> {
+    pub async fn execute(self) -> Result<Vec<super::core::RawRouterData<'a>>, SnmpClientError> {
         if self.operation.is_none() || self.oids.is_empty() {
             return Err(SnmpClientError::InvalidQuery);
         }
@@ -182,18 +186,8 @@ impl<'a> QueryBuilder<'a> {
     }
 }
 
-enum SnmpOperation {
-    Get,
-    GetNext,
-    GetBulk {
-        non_repeaters: i32,
-        max_repetitions: i32,
-    },
-    Walk,
-}
-
 #[derive(Debug)]
-enum SnmpClientError {
+pub enum SnmpClientError {
     OidParseError,
     NoV3Security,
     IoError(std::io::Error),
@@ -218,5 +212,31 @@ impl NetworkClient for SnmpClient {
 
     fn get_data_from_device(&self) -> Result<super::core::RawRouterData<'_>, Self::Error> {
         todo!()
+    }
+}
+
+mod tests {
+    use std::net::IpAddr;
+
+    use super::*;
+    
+    async fn setup() -> Result<Arc<Mutex<AsyncSession>>, SnmpClientError> {
+        let mut client = SnmpClient::new(SocketAddr::new("172.20.0.10".parse().unwrap(), 161), "public", Version::V2C, None);
+        client.get_session().await
+    }
+    
+    #[tokio::test]
+    async fn test_snmp_connect() {
+        let session = setup().await;
+        assert!(session.is_ok());
+    }
+    
+    #[tokio::test]
+    async fn test_snmp_get_data() {
+        let session = setup().await.expect("Failed to setup session");
+        let mut lock = session.lock().await;
+        let result = lock.get(&Oid::from_str("1.3.6.1.2.1.1").unwrap()).await;
+        assert!(result.is_ok());
+        dbg!(result.unwrap());
     }
 }

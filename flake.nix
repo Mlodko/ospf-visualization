@@ -14,7 +14,10 @@
       {
         devShells.default = pkgs.mkShell {
           buildInputs = [
+            pkgs.docker
+            pkgs.docker-compose
             pkgs.nixd
+            pkgs.act
             pkgs.rustc
             pkgs.rust-analyzer
             pkgs.rustfmt
@@ -28,6 +31,15 @@
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
           LD_LIBRARY_PATH = "${pkgs.openssl.out}/lib:${pkgs.lib.makeLibraryPath [pkgs.openssl]}";
+          
+          shellHook = ''
+            echo "🚀 Starting FRR container..."
+            docker-compose up -d
+            echo "✅ FRR running at 172.20.0.10 (SNMP on localhost:161)"
+            echo "🔧 Test: snmpwalk -v2c -c public localhost:161 1.3.6.1.2.1.1"
+            trap 'docker-compose down' EXIT
+          '';
         };
       });
+  
 }
