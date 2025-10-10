@@ -1,3 +1,8 @@
+
+
+/*
+Old LSA code - replaced with ospf-parser crate
+
 use std::{net::Ipv4Addr, time::Duration};
 
 pub enum LsaError {
@@ -117,3 +122,5 @@ impl Lsa {
         Ok(Lsa { header, body })
     }
 }
+
+*/

@@ -221,7 +221,12 @@ mod tests {
     use super::*;
     
     async fn setup() -> Result<Arc<Mutex<AsyncSession>>, SnmpClientError> {
-        let mut client = SnmpClient::new(SocketAddr::new("172.20.0.10".parse().unwrap(), 161), "public", Version::V2C, None);
+        let mut client = SnmpClient::new(
+            SocketAddr::new("127.0.0.1".parse().unwrap(), 1161),
+            "public",
+            Version::V2C,
+            None
+        );
         client.get_session().await
     }
     
@@ -238,5 +243,17 @@ mod tests {
         let result = lock.get(&Oid::from_str("1.3.6.1.2.1.1").unwrap()).await;
         assert!(result.is_ok());
         dbg!(result.unwrap());
+    }
+    
+    #[tokio::test]
+    async fn test_snmp_get_ospf_data() {
+        let session = setup().await.expect("Failed to setup session");
+        let mut lock = session.lock().await;
+        let result = lock.get(&Oid::from_str("1.3.6.1.2.1.14.1.1.0").unwrap()).await;
+        assert!(result.is_ok());
+        let varbinds : Vec<(Oid<'_>, snmp2::Value<'_>)> = result.unwrap().varbinds.collect();
+        assert_ne!(varbinds.len(), 0);
+        assert!(varbinds.first().is_some());
+        println!("Oid: {}\nValue: {:?}", varbinds.first().unwrap().0, varbinds.first().unwrap().1);
     }
 }

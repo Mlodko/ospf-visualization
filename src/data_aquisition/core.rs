@@ -27,7 +27,7 @@ pub enum LinkStateValue {
     // Core OSPF types
     Integer(i64),           // RouterID, AreaID, LSA types, sequence numbers, ages, metrics
     IpAddress(Ipv4Addr),     // IPv4 addresses (router IDs, interface addresses)
-    OctetString(String),   // LSA advertisement data, authentication keys, opaque data
+    OctetString(Vec<u8>),   // LSA advertisement data, authentication keys, opaque data
     
     // Counters and metrics  
     Counter32(u32),         // SPF runs, event counters, LSA counts
@@ -50,7 +50,7 @@ impl From<&Value<'_>> for LinkStateValue {
         match value {
             Value::Integer(i) => LinkStateValue::Integer(*i),
             Value::IpAddress(ip) => LinkStateValue::IpAddress(Ipv4Addr::from_bits(u32::from_ne_bytes(*ip))),
-            Value::OctetString(s) => LinkStateValue::OctetString(String::from_utf8_lossy(s).to_string()),
+            Value::OctetString(s) => LinkStateValue::OctetString(s.to_vec()),
             Value::Counter32(c) => LinkStateValue::Counter32(*c),
             Value::Timeticks(t) => LinkStateValue::Timeticks(*t),
             Value::Boolean(b) => LinkStateValue::Boolean(*b),
