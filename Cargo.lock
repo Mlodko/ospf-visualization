@@ -2364,6 +2364,7 @@ dependencies = [
  "nom-derive",
  "ospf-parser",
  "petgraph",
+ "rand",
  "serde",
  "snmp2",
  "tokio",

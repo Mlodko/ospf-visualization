@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use egui::{Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Shape, Stroke, Vec2, epaint::{CircleShape, RectShape, TextShape}};
 use egui_graphs::{DisplayNode, DrawContext, NodeProps};
 use petgraph::{stable_graph::IndexType, EdgeType};
@@ -11,6 +13,27 @@ pub struct MyNodeShape {
     pub selected: bool,
     pub dragged: bool,
     pub hovered: bool,
+}
+
+// Thread-local overlay collector populated during shapes() and consumed after the GraphView is drawn.
+#[derive(Clone)]
+pub struct LabelOverlay {
+    pub center: Pos2,
+    pub circle_radius: f32,
+    pub text: String,
+    pub color: Color32,
+}
+
+thread_local! {
+    static LABEL_OVERLAY: RefCell<Vec<LabelOverlay>> = RefCell::new(Vec::new());
+}
+
+pub fn clear_label_overlays() {
+    LABEL_OVERLAY.with(|v| v.borrow_mut().clear());
+}
+
+pub fn take_label_overlays() -> Vec<LabelOverlay> {
+    LABEL_OVERLAY.with(|v| v.borrow_mut().drain(..).collect())
 }
 
 impl<N: Clone> From<NodeProps<N>> for MyNodeShape {
@@ -38,7 +61,9 @@ impl<N: Clone, E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<N, E, Ty, Ix> 
     }
 
     fn shapes(&mut self, ctx: &egui_graphs::DrawContext) -> Vec<Shape> {
-        let mut res = Vec::with_capacity(3);
+        // Only return the circle shape to avoid causing egui_graphs edge hit-testing to panic
+        // when encountering Rect/Text shapes. For labels, collect overlay draw data instead.
+        let mut res = Vec::with_capacity(1);
         let circle_center = ctx.meta.canvas_to_screen_pos(self.pos);
         let circle_radius = ctx.meta.canvas_to_screen_size(self.radius);
         let color = self.effective_color(ctx);
@@ -54,18 +79,18 @@ impl<N: Clone, E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<N, E, Ty, Ix> 
             .into(),
         );
         
-        if !self.is_interacted() {
-            return res;
+        // Collect overlay label info for interacted nodes (selected/hovered/dragged).
+        if self.is_interacted() {
+            LABEL_OVERLAY.with(|v| {
+                v.borrow_mut().push(LabelOverlay {
+                    center: circle_center,
+                    circle_radius,
+                    text: self.label.clone(),
+                    color,
+                });
+            });
         }
-        
-        let galley = self.label_galley(ctx, circle_radius, color);
-        res.extend(Self::label_shape(
-            galley,
-            circle_center,
-            circle_radius,
-            color,
-            10f32
-        ));
+
         res
     }
 
@@ -103,6 +128,7 @@ impl MyNodeShape {
         Stroke::default()
     }
     
+    // Keep helpers if you want to generate galleys manually elsewhere.
     fn label_galley(
         &self,
         ctx: &DrawContext,
@@ -125,22 +151,16 @@ impl MyNodeShape {
         color: Color32,
         circle_padding: f32
     ) -> Vec<Shape> {
-        // Top left corner
+        // This helper is retained for reference, but we no longer return these shapes
+        // from shapes() because that can cause the edge hit-test panic in egui_graphs.
         let label_pos = Pos2::new(center.x - galley.size().x / 2., center.y - radius * 2. - galley.size().y - circle_padding);
-        
-        // padding around the text inside the background rectangle
         let pad = Vec2::new(6.0, 4.0);
         let rect_min = Pos2::new(label_pos.x - pad.x, label_pos.y - pad.y);
         let rect_max = Pos2::new(label_pos.x + galley.size().x + pad.x, label_pos.y + galley.size().y + pad.y);
         let rect = Rect::from_min_max(rect_min, rect_max);
 
-        // semi-transparent black background (adjust alpha 0..=255)
         let bg_fill = Color32::from_black_alpha(160);
-        // optional border for the background; use Stroke::default() or create a thin stroke
-        let bg_stroke = Stroke::new(0.0, Color32::TRANSPARENT);
-        
         let bg = RectShape::filled(rect, CornerRadius::ZERO, bg_fill).into();
-        
         let text = TextShape::new(label_pos, galley, color).into();
         
         vec![bg, text]
@@ -149,7 +169,7 @@ impl MyNodeShape {
 
 
 fn closest_point_on_circle(center: Pos2, radius: f32, dir: Vec2) -> Pos2 {
-    center + dir.normalized() * radius
+    center + dir.normalized() * (radius + 1.0)
 }
 
 fn is_inside_circle(center: Pos2, radius: f32, pos: Pos2) -> bool {

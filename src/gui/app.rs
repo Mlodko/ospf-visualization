@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use eframe::egui;
-use egui::{CentralPanel, CollapsingHeader, Context, Separator, SidePanel, TextEdit};
+use egui::{CentralPanel, CollapsingHeader, Context, Separator, SidePanel, TextEdit, FontId, FontFamily, Pos2, Rect, Vec2, epaint::{RectShape, TextShape}, Color32, CornerRadius};
 use egui_graphs::{DefaultEdgeShape, FruchtermanReingold, FruchtermanReingoldState, FruchtermanReingoldWithCenterGravity, FruchtermanReingoldWithCenterGravityState, LayoutForceDirected, SettingsInteraction, SettingsNavigation};
 use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex};
 use tokio::runtime::Runtime;
-use crate::{data_aquisition::snmp::SnmpClient, gui::node_shape::MyNodeShape, network::{network_graph::NetworkGraph, node::Node}};
+use crate::{data_aquisition::snmp::SnmpClient, gui::node_shape::{MyNodeShape, clear_label_overlays, take_label_overlays, LabelOverlay}, network::{network_graph::NetworkGraph, node::Node}};
 
 pub fn main(rt: Arc<Runtime>) {
     let native_options = eframe::NativeOptions::default();
@@ -111,11 +111,52 @@ impl App {
         });
         CentralPanel::default().show(ctx, |ui| {
             egui_graphs::set_layout_state(ui, self.layout_state.clone(), None);
+
+            // Clear collector before drawing graph so shapes() will populate it during widget draw.
+            clear_label_overlays();
+
             let widget = &mut egui_graphs::GraphView::<Node, crate::network::edge::Edge, Directed, DefaultIx, MyNodeShape, DefaultEdgeShape, LayoutState, LayoutForceDirected<Layout>>::new(&mut self.graph.graph)
                 .with_navigations(&SettingsNavigation::default().with_zoom_and_pan_enabled(false).with_fit_to_screen_enabled(true))
                 .with_interactions(&SettingsInteraction::default().with_node_selection_enabled(true))
             ;
-            ui.add(widget);
+
+            // Add widget and obtain response so we can overlay labels afterwards.
+            let response = ui.add(widget);
+
+            // Take the collected overlay labels and paint them on top of the graph widget.
+            let labels: Vec<LabelOverlay> = take_label_overlays();
+            if !labels.is_empty() {
+                let painter = ui.painter();
+                for lbl in labels.into_iter() {
+                    // recreate galley for accurate size
+                    let galley = ctx.fonts_mut(|f| {
+                        f.layout_no_wrap(
+                            lbl.text.clone(),
+                            FontId::new(lbl.circle_radius, FontFamily::Monospace),
+                            lbl.color,
+                        )
+                    });
+                    // Position above the node (same logic previously used in node_shape)
+                    let circle_padding = 10.0f32;
+                    let label_pos = Pos2::new(
+                        lbl.center.x - galley.size().x / 2.,
+                        lbl.center.y - lbl.circle_radius * 2. - galley.size().y - circle_padding,
+                    );
+
+                    // padding around the text inside the background rectangle
+                    let pad = Vec2::new(6.0, 4.0);
+                    let rect_min = Pos2::new(label_pos.x - pad.x, label_pos.y - pad.y);
+                    let rect_max = Pos2::new(label_pos.x + galley.size().x + pad.x, label_pos.y + galley.size().y + pad.y);
+                    let rect = Rect::from_min_max(rect_min, rect_max);
+
+                    // draw semi-transparent black background
+                    let bg_fill = Color32::from_black_alpha(160);
+                    painter.add(RectShape::filled(rect, CornerRadius::ZERO, bg_fill));
+
+                    // draw text
+                    painter.add(TextShape::new(label_pos, galley, lbl.color));
+                }
+            }
         });
     }
     

@@ -2,11 +2,15 @@
 use std::collections::HashMap;
 
 use eframe::egui::Color32;
+use egui::Pos2;
 use egui_graphs::{FruchtermanReingoldState, Graph};
 use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex, prelude::StableGraph};
+use rand::Rng;
 use uuid::Uuid;
 
 use crate::{gui::node_shape::MyNodeShape, network::{edge::{Edge, EdgeMetric}, node::{Node, NodeInfo}, router::RouterId}};
+
+const IF_SKIP_FUNCTIONALLY_P2P_NETWORKS: bool = false;
 
 pub struct NetworkGraph {
     pub graph: Graph<Node, crate::network::edge::Edge, Directed, DefaultIx, MyNodeShape>,
@@ -37,7 +41,7 @@ impl NetworkGraph {
                 let net_id = graph[net_index].id;
                 
                 // If only 2 routers are attached, connect them directly and remove the network node
-                if network.attached_routers.len() == 2 {
+                if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
                     let router1_id = network.attached_routers[0].to_uuidv5();
                     let router2_id = network.attached_routers[1].to_uuidv5();
                     let router1_index = node_id_to_index_map[&router1_id];
@@ -81,12 +85,15 @@ impl NetworkGraph {
             .map(|(index, _)| index)
             .collect();
         
+        let mut rng = rand::rng();
         for index in node_indices {
             let node: &mut egui_graphs::Node<Node, crate::network::edge::Edge, Directed, DefaultIx, MyNodeShape> = if let Some(node) = graph.node_mut(index) {
                 node
             } else {
                 continue;
             };
+            let position = Pos2::new(rng.random_range(0.0..40.0), rng.random_range(0.0..40.0));
+            node.set_location(position);
             let payload = node.payload();
             let label = if let Some(label) = &payload.label {
                 label.clone()
@@ -100,9 +107,14 @@ impl NetworkGraph {
                         )
                     }
                     NodeInfo::Router(router) => {
-                        format!("Router\nID: {}", 
+                        let mut label = format!("Router\nID: {}\nInterface IPs: [\n", 
                             router.id
-                        )
+                        );
+                        for interface in router.interfaces.iter() {
+                            label.push_str(&format!("{}\n", interface));
+                        }
+                        label.push(']');
+                        label
                     }
                 }
             };
