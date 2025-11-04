@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use eframe::egui;
-use egui::{CentralPanel, Context, SidePanel, TextEdit};
-use egui_graphs::{DefaultEdgeShape, FruchtermanReingold, FruchtermanReingoldState, LayoutForceDirected, SettingsInteraction, SettingsNavigation};
+use egui::{CentralPanel, CollapsingHeader, Context, Separator, SidePanel, TextEdit};
+use egui_graphs::{DefaultEdgeShape, FruchtermanReingold, FruchtermanReingoldState, FruchtermanReingoldWithCenterGravity, FruchtermanReingoldWithCenterGravityState, LayoutForceDirected, SettingsInteraction, SettingsNavigation};
 use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex};
 use tokio::runtime::Runtime;
 use crate::{data_aquisition::snmp::SnmpClient, gui::node_shape::MyNodeShape, network::{network_graph::NetworkGraph, node::Node}};
@@ -19,13 +19,16 @@ pub fn main(rt: Arc<Runtime>) {
     }
 }
 
+type Layout = FruchtermanReingoldWithCenterGravity;
+type LayoutState = FruchtermanReingoldWithCenterGravityState;
+
 struct App {
     snmp_client: SnmpClient,
     graph: NetworkGraph,
     label_input: String,
     selected_node: Option<NodeIndex>,
     runtime: Arc<Runtime>,
-    layout_state: FruchtermanReingoldState
+    layout_state: LayoutState
 }
 
 impl App {
@@ -40,9 +43,7 @@ impl App {
             })
             .collect();
         let graph = NetworkGraph::build_new(nodes);
-        let mut layout_state = FruchtermanReingoldState::default();
-        layout_state.c_repulse = 0.7;
-        layout_state.k_scale = 0.5;
+        let layout_state = LayoutState::default();
         Self {snmp_client, graph , label_input: String::default(), selected_node: Option::default(), runtime, layout_state }
     }
     
@@ -77,10 +78,40 @@ impl App {
                 let rt = self.runtime.clone();
                 rt.block_on(self.reset(ui));
             }
+            ui.add(Separator::default());
+            
+            // Forces section
+            CollapsingHeader::new("Forces").default_open(true).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.add(egui::Slider::new(&mut self.layout_state.base.k_scale, 0.2..=3.0).text("k_scale"));
+                info_icon(ui, "Scale ideal edge length k; >1 spreads the layout, <1 compacts it.");
+            });
+            ui.horizontal(|ui| {
+                ui.add(egui::Slider::new(&mut self.layout_state.base.c_attract, 0.1..=3.0).text("c_attract"));
+                info_icon(ui, "Multiplier for attractive force along edges (higher pulls connected nodes together).");
+            });
+            ui.horizontal(|ui| {
+                ui.add(egui::Slider::new(&mut self.layout_state.base.c_repulse, 0.1..=3.0).text("c_repulse"));
+                info_icon(ui, "Multiplier for repulsive force between nodes (higher pushes nodes apart).");
+            });
+
+            ui.separator();
+            ui.label("Extras");
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.layout_state.extras.0.enabled, "center_gravity");
+                info_icon(ui, "Enable/disable center gravity force.");
+            });
+            ui.add_enabled_ui(self.layout_state.extras.0.enabled, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::Slider::new(&mut self.layout_state.extras.0.params.c, 0.0..=2.0).text("center_strength"));
+                    info_icon(ui, "Coefficient for pull toward viewport/graph center.");
+                });
+            });
+        });
         });
         CentralPanel::default().show(ctx, |ui| {
             egui_graphs::set_layout_state(ui, self.layout_state.clone(), None);
-            let widget = &mut egui_graphs::GraphView::<Node, crate::network::edge::Edge, Directed, DefaultIx, MyNodeShape, DefaultEdgeShape, /*FruchtermanReingoldState, LayoutForceDirected<FruchtermanReingold>*/>::new(&mut self.graph.graph)
+            let widget = &mut egui_graphs::GraphView::<Node, crate::network::edge::Edge, Directed, DefaultIx, MyNodeShape, DefaultEdgeShape, LayoutState, LayoutForceDirected<Layout>>::new(&mut self.graph.graph)
                 .with_navigations(&SettingsNavigation::default().with_zoom_and_pan_enabled(false).with_fit_to_screen_enabled(true))
                 .with_interactions(&SettingsInteraction::default().with_node_selection_enabled(true))
             ;
@@ -111,4 +142,9 @@ impl eframe::App for App {
         self.render(ctx);
         self.update_data();
     }
+}
+
+fn info_icon(ui: &mut egui::Ui, tip: &str) {
+    ui.add_space(4.0);
+    ui.small_button("ℹ").on_hover_text(tip);
 }
