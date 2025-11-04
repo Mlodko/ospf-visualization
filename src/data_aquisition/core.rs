@@ -16,9 +16,6 @@ pub enum RawRouterData<'a> {
 
 /// Represents a network client that can retrieve data from a network device.
 pub trait NetworkClient {
-    type Error: std::error::Error + Send + Sync + 'static;
-    
-    fn get_data_from_device(&self) -> Result<RawRouterData<'_>, Self::Error>; 
 }
 
 /// Replacement for the snmp2::Value type due to lifetime shenanigans
@@ -49,7 +46,7 @@ impl From<&Value<'_>> for LinkStateValue {
     fn from(value: &Value) -> Self {
         match value {
             Value::Integer(i) => LinkStateValue::Integer(*i),
-            Value::IpAddress(ip) => LinkStateValue::IpAddress(Ipv4Addr::from_bits(u32::from_ne_bytes(*ip))),
+            Value::IpAddress(ip) => LinkStateValue::IpAddress(Ipv4Addr::from_bits(u32::from_be_bytes(*ip))),
             Value::OctetString(s) => LinkStateValue::OctetString(s.to_vec()),
             Value::Counter32(c) => LinkStateValue::Counter32(*c),
             Value::Timeticks(t) => LinkStateValue::Timeticks(*t),

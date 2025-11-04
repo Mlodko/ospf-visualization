@@ -1,7 +1,11 @@
 mod data_aquisition;
-mod ospf_parser;
+mod parsers;
 mod network;
+mod gui;
+
+use gui::app;
+use eframe::egui;
 
 fn main() {
-    println!("Hello, world!");
+    app::main();
 }

@@ -1,3 +1,5 @@
+use crate::{data_aquisition::snmp::SnmpClientError, parsers::ospf_parser::lsa::LsaError};
+
 /*
 This module handles converting raw router data into semantic OSPF data structures, 
 and then turning them into a protocol-agnostic graph format (network module)
@@ -22,4 +24,11 @@ v
 --- gui module ---
 User interface for visualizing the graph
 */
-mod lsa;
+pub mod lsa;
+pub mod snmp;
+
+#[derive(Debug)]
+pub enum OspfError {
+    Lsa(LsaError),
+    Snmp(SnmpClientError)
+}

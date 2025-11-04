@@ -4,5 +4,5 @@
  * This allows for adding support for new data sources and routing protocols.
  */
 
-mod core;
-mod snmp;
+pub mod core;
+pub mod snmp;

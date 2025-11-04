@@ -3,7 +3,7 @@
  * It also provides functions for modifying, merging, and doing pathfinding on the graph.
  */
 
-mod router;
-mod node;
-mod edge;
-mod network_graph;
+pub mod router;
+pub mod node;
+pub mod edge;
+pub mod network_graph;
