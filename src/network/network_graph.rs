@@ -30,11 +30,11 @@ impl NetworkGraph {
         // while trying to mutably add edges later.
         let mut edges_to_add: Vec<(NodeIndex, uuid::Uuid, uuid::Uuid)> = Vec::new();
         let mut node_indices_to_remove = Vec::new();
-        for index in graph.node_indices() {
-            if let NodeInfo::Network(network) = &graph[index].info {
-                println!("Index: {:?}", index);
-                dbg!(&graph[index]);
-                let source_id = graph[index].id;
+        for net_index in graph.node_indices() {
+            if let NodeInfo::Network(network) = &graph[net_index].info {
+                println!("Index: {:?}", net_index);
+                dbg!(&graph[net_index]);
+                let net_id = graph[net_index].id;
                 
                 // If only 2 routers are attached, connect them directly and remove the network node
                 if network.attached_routers.len() == 2 {
@@ -45,12 +45,14 @@ impl NetworkGraph {
                     edges_to_add.push((router1_index, router1_id, router2_id));
                     edges_to_add.push((router2_index, router2_id, router1_id));
                     println!("removed");
-                    node_indices_to_remove.push(index);
+                    node_indices_to_remove.push(net_index);
                     continue;
                 }
                 
+                // Only make an edge from the router to the network
                 for router_node_id in network.attached_routers.iter().map(RouterId::to_uuidv5) {
-                    edges_to_add.push((index, source_id, router_node_id));
+                    let router_index = *node_id_to_index_map.get(&router_node_id).unwrap();
+                    edges_to_add.push((router_index, router_node_id, net_id));
                 }
             }
         }

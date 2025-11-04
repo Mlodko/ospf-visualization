@@ -33,6 +33,10 @@
           xorg.libXinerama
           xorg.libXext
           vulkan-loader
+          mesa
+          vulkan-tools
+          libdrm
+          libllvm
         ];
       in {
         devShells.default = pkgs.mkShell {
@@ -65,6 +69,7 @@
             wayland-protocols
             vulkan-loader
             libGL
+            
             # libwayland  # Uncomment if you need the static lib
             # nushell     # Uncomment to use nushell as login shell
             # u-config    # Uncomment if you want this config tool
@@ -87,6 +92,8 @@
             export RUSTUP_HOME="$HOME/.rustup"
             export LD_LIBRARY_PATH="${libPath}:${pkgs.openssl.out}/lib:$LD_LIBRARY_PATH"
             mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
+            
+            export WINIT_UNIX_BACKEND=x11
 
             # Uncomment to launch nushell as login shell
             # exec nu --login

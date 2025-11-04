@@ -108,6 +108,7 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
         advertisement: lsa.advertisement.clone(),
     };
     
+    
     let router = Router {
         id: router_id,
         interfaces,
@@ -139,7 +140,7 @@ pub fn parse_lsa_type_2_to_network(lsa: &OspfLsdbEntry) -> Result<Network, LsaEr
     );
     
     let attached_routers = advertisement.iter_attached_routers()
-        .map(|router_id| RouterId::Ipv4(router_id))
+        .map(RouterId::Ipv4)
         .collect::<Vec<_>>();
     
     
