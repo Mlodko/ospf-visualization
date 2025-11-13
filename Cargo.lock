@@ -2357,6 +2357,7 @@ dependencies = [
 name = "ospf-visualization"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "eframe",
  "egui",
  "egui_graphs",

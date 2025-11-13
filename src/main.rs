@@ -1,12 +1,11 @@
 mod data_aquisition;
-mod parsers;
-mod network;
 mod gui;
+mod network;
+mod parsers;
+mod topology;
 
 use std::sync::Arc;
-
 use gui::app;
-use eframe::egui;
 
 fn main() {
     let rt = Arc::new(tokio::runtime::Runtime::new().unwrap());

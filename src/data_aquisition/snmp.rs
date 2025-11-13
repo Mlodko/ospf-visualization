@@ -3,9 +3,12 @@
 use crate::data_aquisition::core::LinkStateValue;
 
 use super::core::{NetworkClient, RawRouterData};
-use ospf_parser::OspfRouterLinksAdvertisement;
+
 use snmp2::{AsyncSession, MessageType, Oid, Version, v3::Security};
-use std::{collections::HashMap, error::Error, fmt::Display, net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap, error::Error, fmt::Display, net::SocketAddr, str::FromStr, sync::Arc,
+    time::Duration,
+};
 use tokio::sync::Mutex;
 
 /// SNMP client for retrieving data from a network device.
@@ -74,7 +77,7 @@ impl SnmpClient {
             Ok(self.session.as_ref().unwrap().clone())
         }
     }
-    
+
     /// Start building a new query.
     pub async fn query(&mut self) -> Result<QueryBuilder<'_>, SnmpClientError> {
         let session = self.get_session().await?;
@@ -211,17 +214,27 @@ pub enum SnmpClientError {
     InvalidData,
 }
 
-#[allow(unused_variables)]
 impl Display for SnmpClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        match self {
+            SnmpClientError::OidParseError => write!(f, "failed to parse OID"),
+            SnmpClientError::NoV3Security => write!(f, "missing SNMPv3 security parameters"),
+            SnmpClientError::IoError(e) => write!(f, "IO error: {}", e),
+            SnmpClientError::Snmp2Error(e) => write!(f, "SNMP error: {}", e),
+            SnmpClientError::NoSession => write!(f, "no SNMP session"),
+            SnmpClientError::InvalidQuery => write!(f, "invalid query (missing operation or OIDs)"),
+            SnmpClientError::MultipleOidsOnGet => {
+                write!(f, "multiple OIDs provided for single GET/GETNEXT")
+            }
+            SnmpClientError::UnsupportedSnmpOperation => write!(f, "unsupported SNMP operation"),
+            SnmpClientError::InvalidData => write!(f, "invalid data for expected SNMP response"),
+        }
     }
 }
 
 impl Error for SnmpClientError {}
 
-impl NetworkClient for SnmpClient {
-}
+impl NetworkClient for SnmpClient {}
 
 /// A utility struct representing a single row of an SNMP table.
 #[derive(Debug, Clone)]
@@ -248,54 +261,68 @@ impl SnmpTableRow<'_> {
 
         // Row index: (column oid, value)
         let mut rows_map: HashMap<Oid<'a>, HashMap<Oid<'a>, LinkStateValue>> = HashMap::new();
-        let table_prefix_length = table_oid_prefix.iter().expect("Table OID prefix component(s) don't fit into u64").count();
-        
-        for (oid, value) in pairs.into_iter().filter(|(oid, _)| oid.starts_with(table_oid_prefix)) {
-            let row_index_suffix: Vec<u64> = oid.iter().expect("OID component(s) don't fit into u64")
-                .skip(table_prefix_length + column_id_component_length).collect();
-            let row_index_suffix = Oid::from(&row_index_suffix).map_err(|_| SnmpClientError::OidParseError)?;
+        let table_prefix_length = table_oid_prefix
+            .iter()
+            .expect("Table OID prefix component(s) don't fit into u64")
+            .count();
+
+        for (oid, value) in pairs
+            .into_iter()
+            .filter(|(oid, _)| oid.starts_with(table_oid_prefix))
+        {
+            let row_index_suffix: Vec<u64> = oid
+                .iter()
+                .expect("OID component(s) don't fit into u64")
+                .skip(table_prefix_length + column_id_component_length)
+                .collect();
+            let row_index_suffix =
+                Oid::from(&row_index_suffix).map_err(|_| SnmpClientError::OidParseError)?;
             // Skip the row suffix
             let column_oid = {
                 let oid: Vec<u64> = oid.iter().ok_or(SnmpClientError::OidParseError)?.collect();
                 let column_oid = &oid[..table_prefix_length + column_id_component_length];
                 Oid::from(column_oid).map_err(|_| SnmpClientError::OidParseError)
             }?;
-            rows_map.entry(row_index_suffix).or_default().insert(column_oid, value);
+            rows_map
+                .entry(row_index_suffix)
+                .or_default()
+                .insert(column_oid, value);
         }
-        
-        let rows = rows_map.into_iter().map(|(row_index_suffix, columns)| {
-            SnmpTableRow {
+
+        let rows = rows_map
+            .into_iter()
+            .map(|(row_index_suffix, columns)| SnmpTableRow {
                 table_oid_prefix: table_oid_prefix.clone(),
                 row_index_suffix,
                 columns,
-            }
-        }).collect();
-        
+            })
+            .collect();
+
         Ok(rows)
     }
 }
 
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
+    // moved specific net imports into the test where they are used to silence warnings
 
     use super::*;
-    
+
     async fn setup() -> Result<Arc<Mutex<AsyncSession>>, SnmpClientError> {
         let mut client = SnmpClient::new(
             SocketAddr::new("127.0.0.1".parse().unwrap(), 1161),
             "public",
             Version::V2C,
-            None
+            None,
         );
         client.get_session().await
     }
-    
+
     #[tokio::test]
     async fn test_snmp_connect() {
         let session = setup().await;
         assert!(session.is_ok());
     }
-    
+
     #[tokio::test]
     async fn test_snmp_get_data() {
         let session = setup().await.expect("Failed to setup session");
@@ -304,26 +331,33 @@ mod tests {
         assert!(result.is_ok());
         dbg!(result.unwrap());
     }
-    
+
     #[tokio::test]
     async fn test_snmp_get_ospf_data() {
         let session = setup().await.expect("Failed to setup session");
         let mut lock = session.lock().await;
-        let result = lock.get(&Oid::from_str("1.3.6.1.2.1.14.1.1.0").unwrap()).await;
+        let result = lock
+            .get(&Oid::from_str("1.3.6.1.2.1.14.1.1.0").unwrap())
+            .await;
         assert!(result.is_ok());
-        let varbinds : Vec<(Oid<'_>, snmp2::Value<'_>)> = result.unwrap().varbinds.collect();
+        let varbinds: Vec<(Oid<'_>, snmp2::Value<'_>)> = result.unwrap().varbinds.collect();
         assert_ne!(varbinds.len(), 0);
         assert!(varbinds.first().is_some());
-        println!("Oid: {}\nValue: {:?}", varbinds.first().unwrap().0, varbinds.first().unwrap().1);
+        println!(
+            "Oid: {}\nValue: {:?}",
+            varbinds.first().unwrap().0,
+            varbinds.first().unwrap().1
+        );
     }
-    
+
     #[tokio::test]
     async fn test_snmp_get_table() {
+        use std::net::{IpAddr, Ipv4Addr};
         let mut client = SnmpClient::new(
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1161),
             "public",
             Version::V2C,
-            None
+            None,
         );
         let column_oids: Vec<Oid> = [
             "1.3.6.1.2.1.14.4.1.1",
@@ -333,16 +367,27 @@ mod tests {
             "1.3.6.1.2.1.14.4.1.5",
             "1.3.6.1.2.1.14.4.1.6",
             "1.3.6.1.2.1.14.4.1.7",
-            "1.3.6.1.2.1.14.4.1.8"
-            ].iter().map(|oid| Oid::from_str(oid).unwrap()).collect();
-        let query = client.query().await.unwrap()
+            "1.3.6.1.2.1.14.4.1.8",
+        ]
+        .iter()
+        .map(|oid| Oid::from_str(oid).unwrap())
+        .collect();
+        let query = client
+            .query()
+            .await
+            .unwrap()
             .oids(column_oids)
             .get_bulk(0, 20);
-        
+
         let results = query.execute().await.unwrap();
-        
-        let rows = SnmpTableRow::group_into_rows(results, &Oid::from_str("1.3.6.1.2.1.14.4.1").unwrap(), 1).unwrap();
-        
+
+        let rows = SnmpTableRow::group_into_rows(
+            results,
+            &Oid::from_str("1.3.6.1.2.1.14.4.1").unwrap(),
+            1,
+        )
+        .unwrap();
+
         for row in rows {
             dbg!(row);
         }

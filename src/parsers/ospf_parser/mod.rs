@@ -1,7 +1,7 @@
 use crate::{data_aquisition::snmp::SnmpClientError, parsers::ospf_parser::lsa::LsaError};
 
 /*
-This module handles converting raw router data into semantic OSPF data structures, 
+This module handles converting raw router data into semantic OSPF data structures,
 and then turning them into a protocol-agnostic graph format (network module)
 
 So basically
@@ -9,7 +9,7 @@ So basically
 --- data_aquisition module ---
 SNMP/RESTCONF
 |
-| Raw router data, data_aquisition doesn't care about the routing protocol 
+| Raw router data, data_aquisition doesn't care about the routing protocol
 v
 --- ospf_parser module ---
 Semantic OSPF data structures from ospf-parser crate
@@ -17,7 +17,7 @@ Semantic OSPF data structures from ospf-parser crate
 | (this transition should still happen in ospf_parser, network only touches the protocol-agnostic graph)
 v
 --- network module ---
-Protocol-agnostic graph format 
+Protocol-agnostic graph format
 |
 |
 v
@@ -26,8 +26,12 @@ User interface for visualizing the graph
 */
 pub mod lsa;
 pub mod snmp;
+pub mod snmp_source;
+pub mod source;
 
 #[derive(Debug)]
+#[allow(dead_code)]
+#[deprecated]
 pub enum OspfError {
     Lsa(LsaError),
     Snmp(SnmpClientError)

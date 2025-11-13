@@ -34,6 +34,7 @@ pub enum NodeInfo {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Network {
     pub ip_address: IpNetwork,
     pub protocol_data: Option<ProtocolData>,
@@ -41,6 +42,7 @@ pub struct Network {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct OspfData {
     pub area_id: Ipv4Addr,
     pub advertisement: std::sync::Arc<OspfLinkStateAdvertisement>,
@@ -52,6 +54,7 @@ pub struct IsIsData {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ProtocolData {
     Ospf(OspfData),
     IsIs(IsIsData),

@@ -1,23 +1,37 @@
-
 use std::collections::HashMap;
 
 use eframe::egui::Color32;
 use egui::Pos2;
-use egui_graphs::{FruchtermanReingoldState, Graph};
+use egui_graphs::Graph;
 use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex, prelude::StableGraph};
 use rand::Rng;
 use uuid::Uuid;
 
-use crate::{gui::node_shape::MyNodeShape, network::{edge::{Edge, EdgeMetric}, node::{Node, NodeInfo}, router::RouterId}};
+use crate::{
+    gui::node_shape::MyNodeShape,
+    network::{
+        edge::{Edge, EdgeMetric},
+        node::{Node, NodeInfo},
+        router::RouterId,
+    },
+};
 
 const IF_SKIP_FUNCTIONALLY_P2P_NETWORKS: bool = false;
 
+/// A protocol-agnostic graph wrapper used by the GUI.
+///
+/// Builds a graph from Nodes and wires edges based on attached_routers.
+/// node_id_to_index_map maps stable UUIDs to graph indices to allow safe lookups.
+
+#[allow(dead_code)]
 pub struct NetworkGraph {
     pub graph: Graph<Node, crate::network::edge::Edge, Directed, DefaultIx, MyNodeShape>,
-    pub node_id_to_index_map: HashMap<Uuid, NodeIndex>
+    pub node_id_to_index_map: HashMap<Uuid, NodeIndex>,
 }
 
 impl NetworkGraph {
+    /// Build a new NetworkGraph from a list of protocol-agnostic nodes.
+    /// This method avoids panics by validating lookups and ignores incomplete references.
     pub fn build_new(nodes: Vec<Node>) -> Self {
         let (mut graph, node_id_to_index_map) = {
             let mut graph = StableGraph::new();
@@ -36,31 +50,32 @@ impl NetworkGraph {
         let mut node_indices_to_remove = Vec::new();
         for net_index in graph.node_indices() {
             if let NodeInfo::Network(network) = &graph[net_index].info {
-                println!("Index: {:?}", net_index);
-                dbg!(&graph[net_index]);
                 let net_id = graph[net_index].id;
-                
+
                 // If only 2 routers are attached, connect them directly and remove the network node
                 if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
                     let router1_id = network.attached_routers[0].to_uuidv5();
                     let router2_id = network.attached_routers[1].to_uuidv5();
-                    let router1_index = node_id_to_index_map[&router1_id];
-                    let router2_index = node_id_to_index_map[&router2_id];
-                    edges_to_add.push((router1_index, router1_id, router2_id));
-                    edges_to_add.push((router2_index, router2_id, router1_id));
-                    println!("removed");
-                    node_indices_to_remove.push(net_index);
+                    if let (Some(&router1_index), Some(&router2_index)) = (
+                        node_id_to_index_map.get(&router1_id),
+                        node_id_to_index_map.get(&router2_id),
+                    ) {
+                        edges_to_add.push((router1_index, router1_id, router2_id));
+                        edges_to_add.push((router2_index, router2_id, router1_id));
+                        node_indices_to_remove.push(net_index);
+                    }
                     continue;
                 }
-                
+
                 // Only make an edge from the router to the network
                 for router_node_id in network.attached_routers.iter().map(RouterId::to_uuidv5) {
-                    let router_index = *node_id_to_index_map.get(&router_node_id).unwrap();
-                    edges_to_add.push((router_index, router_node_id, net_id));
+                    if let Some(&router_index) = node_id_to_index_map.get(&router_node_id) {
+                        edges_to_add.push((router_index, router_node_id, net_id));
+                    }
                 }
             }
         }
-        
+
         for node_index in node_indices_to_remove {
             let _ = graph.remove_node(node_index);
         }
@@ -77,17 +92,28 @@ impl NetworkGraph {
             }
         }
 
-        let mut graph: egui_graphs::Graph<Node, crate::network::edge::Edge, Directed, DefaultIx, MyNodeShape, _> = egui_graphs::to_graph(&graph);
-        
+        let mut graph: egui_graphs::Graph<
+            Node,
+            crate::network::edge::Edge,
+            Directed,
+            DefaultIx,
+            MyNodeShape,
+            _,
+        > = egui_graphs::to_graph(&graph);
+
         // Node formatting
-        
-        let node_indices: Vec<NodeIndex> = graph.nodes_iter()
-            .map(|(index, _)| index)
-            .collect();
-        
+
+        let node_indices: Vec<NodeIndex> = graph.nodes_iter().map(|(index, _)| index).collect();
+
         let mut rng = rand::rng();
         for index in node_indices {
-            let node: &mut egui_graphs::Node<Node, crate::network::edge::Edge, Directed, DefaultIx, MyNodeShape> = if let Some(node) = graph.node_mut(index) {
+            let node: &mut egui_graphs::Node<
+                Node,
+                crate::network::edge::Edge,
+                Directed,
+                DefaultIx,
+                MyNodeShape,
+            > = if let Some(node) = graph.node_mut(index) {
                 node
             } else {
                 continue;
@@ -101,15 +127,14 @@ impl NetworkGraph {
                 // Default label - network IP for Network and Router ID for router
                 match &payload.info {
                     NodeInfo::Network(net) => {
-                        format!("Network\nIP: {}\nMask: {}", 
+                        format!(
+                            "Network\nIP: {}\nMask: {}",
                             net.ip_address.network(),
                             net.ip_address.mask()
                         )
                     }
                     NodeInfo::Router(router) => {
-                        let mut label = format!("Router\nID: {}\nInterface IPs: [\n", 
-                            router.id
-                        );
+                        let mut label = format!("Router\nID: {}\nInterface IPs: [\n", router.id);
                         for interface in router.interfaces.iter() {
                             label.push_str(&format!("{}\n", interface));
                         }
@@ -118,7 +143,7 @@ impl NetworkGraph {
                     }
                 }
             };
-            
+
             // Set color based on node type
             let router_color = Color32::BLUE;
             let network_color = Color32::GREEN;
@@ -129,11 +154,10 @@ impl NetworkGraph {
             node.set_label(label);
             node.set_color(node_color);
         }
-        
-        
+
         Self {
             graph,
-            node_id_to_index_map
+            node_id_to_index_map,
         }
     }
 }
