@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
+use crate::gui::node_panel::{FloatingNodePanel, collapsible_section, label_editor_row};
 use crate::{
-    gui::node_shape::{
-        LabelOverlay, MyNodeShape, build_label_galley, clear_label_overlays, take_label_overlays,
-    },
+    gui::node_shape::{LabelOverlay, MyNodeShape, clear_label_overlays, take_label_overlays},
     network::{network_graph::NetworkGraph, node::Node},
     topology::{OspfSnmpTopology, TopologySource},
 };
 use eframe::egui;
-use egui::{CentralPanel, CollapsingHeader, Context, Separator, SidePanel, TextEdit};
+use egui::{CentralPanel, CollapsingHeader, Context, Id, Separator, SidePanel, TextEdit};
 use egui_graphs::{
     DefaultEdgeShape, FruchtermanReingoldWithCenterGravity,
     FruchtermanReingoldWithCenterGravityState, LayoutForceDirected, SettingsInteraction,
@@ -65,7 +64,10 @@ struct App {
 }
 
 impl App {
-    async fn new(cc: &eframe::CreationContext<'_>, runtime: Arc<Runtime>) -> Result<Self, RuntimeError> {
+    async fn new(
+        cc: &eframe::CreationContext<'_>,
+        runtime: Arc<Runtime>,
+    ) -> Result<Self, RuntimeError> {
         let _ = cc; // silence unused variable warning for now
 
         let snmp_client = crate::data_aquisition::snmp::SnmpClient::default();
@@ -79,16 +81,14 @@ impl App {
         };
         let graph = NetworkGraph::build_new(nodes);
         let layout_state = LayoutState::default();
-        Ok(
-        Self {
+        Ok(Self {
             topo,
             graph,
             label_input: String::default(),
             selected_node: Option::default(),
             runtime,
             layout_state,
-        }
-        )
+        })
     }
 
     fn read_data(&mut self) {
@@ -185,41 +185,52 @@ impl App {
             // Take the collected overlay labels and paint them on top of the graph widget.
             let labels: Vec<LabelOverlay> = take_label_overlays();
             if !labels.is_empty() {
-                let painter = ui.painter();
-                for lbl in labels.into_iter() {
-                    let galley = build_label_galley(ctx, &lbl.text, lbl.circle_radius, lbl.color);
-                    let circle_padding = 10.0f32;
-                    let shapes = MyNodeShape::label_shape(
-                        galley,
-                        lbl.center,
-                        lbl.circle_radius,
-                        lbl.color,
-                        circle_padding,
-                    );
-                    painter.extend(shapes);
+                for (i, lbl) in labels.into_iter().enumerate() {
+                    if self.selected_node.is_some() && lbl.text == self.label_input {
+                        let id = Id::new(("node_panel", i, &lbl.text));
+                        let panel = FloatingNodePanel::new(id, lbl.center).title("Network");
+                        let _resp = panel.show(ctx, |ui, _ctx| {
+                            // Integrated label input
+                            let _ = label_editor_row(ui, &mut self.label_input);
+                            ui.add_space(8.0);
+
+                            // Modular, extensible sections
+                            collapsible_section(ui, "Connected routers", true, |ui| {
+                                ui.label("No data");
+                            });
+
+                            ui.add_space(8.0);
+
+                            collapsible_section(ui, "Protocol Data", true, |ui| {
+                                collapsible_section(ui, "OSPF", true, |ui| {
+                                    ui.label("No data");
+                                });
+                            });
+                        });
+                    }
                 }
             }
         });
     }
 
     async fn reset(&mut self, ui: &mut egui::Ui) {
-            println!("resetting");
-            self.label_input = String::default();
-            self.selected_node = Option::default();
+        println!("resetting");
+        self.label_input = String::default();
+        self.selected_node = Option::default();
 
-            let nodes: Vec<Node> = match self.topo.fetch_nodes().await {
-                Ok(nodes) => nodes,
-                Err(e) => {
-                    eprintln!("Failed to fetch topology nodes: {:?}", e);
-                    return;
-                }
-            };
+        let nodes: Vec<Node> = match self.topo.fetch_nodes().await {
+            Ok(nodes) => nodes,
+            Err(e) => {
+                eprintln!("Failed to fetch topology nodes: {:?}", e);
+                return;
+            }
+        };
 
-            let graph = NetworkGraph::build_new(nodes);
-            println!("built new graph");
-            self.graph = graph;
-            egui_graphs::reset::<egui_graphs::LayoutStateRandom>(ui, None);
-        }
+        let graph = NetworkGraph::build_new(nodes);
+        println!("built new graph");
+        self.graph = graph;
+        egui_graphs::reset::<egui_graphs::LayoutStateRandom>(ui, None);
+    }
 }
 
 impl eframe::App for App {
