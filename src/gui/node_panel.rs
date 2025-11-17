@@ -78,6 +78,8 @@ pub struct NodePanelResponse {
     pub pinned: bool,
     /// True if the user clicked the close button in the panel header.
     pub close_clicked: bool,
+    /// True if the node label was changed in this frame.
+    pub label_changed: bool,
     /// The egui response for the entire area; useful for hover detection.
     pub area_response: Response,
 }
@@ -150,10 +152,17 @@ impl FloatingNodePanel {
 
                     // Header with title, pin, and close controls.
                     ui.horizontal(|ui| {
-                        if let Some(title) = &self.title {
-                            ui.strong(title.as_str());
-                        } else {
-                            ui.strong("Node");
+                        // Editable label replaces static title; persisted per panel id.
+                        let label_id = self.id.with("label_text");
+                        let mut label_text = ctx.data_mut(|d| {
+                            d.get_persisted::<String>(label_id).unwrap_or_else(|| {
+                                self.title.clone().unwrap_or_else(|| "Node".to_string())
+                            })
+                        });
+                        let resp = ui
+                            .add(egui::TextEdit::singleline(&mut label_text).desired_width(160.0));
+                        if resp.changed() {
+                            ctx.data_mut(|d| d.insert_persisted(label_id, label_text.clone()));
                         }
 
                         // Right-aligned controls
@@ -197,6 +206,79 @@ impl FloatingNodePanel {
             rect: area.response.rect,
             pinned: pinned_state,
             close_clicked,
+            label_changed: false,
+            area_response: area.response,
+        }
+    }
+
+    /// Show variant that edits a provided node label directly in the header.
+    /// Returns NodePanelResponse with label_changed indicating whether the label mutated.
+    pub fn show_with_label<R>(
+        &self,
+        ctx: &Context,
+        node_label: &mut String,
+        add_contents: impl FnOnce(&mut Ui, &Context) -> R,
+    ) -> NodePanelResponse {
+        let pos = Pos2 {
+            x: self.anchor.x + self.options.offset.x,
+            y: self.anchor.y + self.options.offset.y,
+        };
+
+        let mut pinned_state = persisted_pin(ctx, self.id).unwrap_or(self.options.pinned_default);
+        let mut close_clicked = false;
+        let mut label_changed_flag = false;
+
+        let area: InnerResponse<()> = egui::Area::new(self.id)
+            .order(self.options.order)
+            .movable(pinned_state)
+            .interactable(true)
+            .constrain(true)
+            .fixed_pos(pos)
+            .show(ctx, |ui| {
+                let mut frame = Frame::popup(ui.style());
+                frame.show(ui, |ui| {
+                    ui.set_min_width(self.options.min_width);
+                    ui.horizontal(|ui| {
+                        // Direct edit of node label
+                        let resp =
+                            ui.add(egui::TextEdit::singleline(node_label).desired_width(160.0));
+                        if resp.changed() {
+                            label_changed_flag = true;
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add(egui::Button::new("✕").small())
+                                .on_hover_text("Close")
+                                .clicked()
+                            {
+                                close_clicked = true;
+                            }
+                            let pin_label = if pinned_state { "📌" } else { "📍" };
+                            if ui
+                                .add(egui::Button::new(pin_label).small())
+                                .on_hover_text(if pinned_state {
+                                    "Unpin (panel will follow selection/hover)"
+                                } else {
+                                    "Pin (panel becomes draggable and remains visible)"
+                                })
+                                .clicked()
+                            {
+                                pinned_state = !pinned_state;
+                            }
+                        });
+                    });
+                    ui.add_space(6.0);
+                    add_contents(ui, ctx);
+                });
+            });
+
+        set_persisted_pin(ctx, self.id, pinned_state);
+
+        NodePanelResponse {
+            rect: area.response.rect,
+            pinned: pinned_state,
+            close_clicked,
+            label_changed: label_changed_flag,
             area_response: area.response,
         }
     }

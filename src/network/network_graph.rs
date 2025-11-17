@@ -126,21 +126,8 @@ impl NetworkGraph {
             } else {
                 // Default label - network IP for Network and Router ID for router
                 match &payload.info {
-                    NodeInfo::Network(net) => {
-                        format!(
-                            "Network\nIP: {}\nMask: {}",
-                            net.ip_address.network(),
-                            net.ip_address.mask()
-                        )
-                    }
-                    NodeInfo::Router(router) => {
-                        let mut label = format!("Router\nID: {}\nInterface IPs: [\n", router.id);
-                        for interface in router.interfaces.iter() {
-                            label.push_str(&format!("{}\n", interface));
-                        }
-                        label.push(']');
-                        label
-                    }
+                    NodeInfo::Network(_) => "Network".to_string(),
+                    NodeInfo::Router(_) => "Router".to_string()
                 }
             };
 
@@ -160,4 +147,131 @@ impl NetworkGraph {
             node_id_to_index_map,
         }
     }
+    
+    // Reconcile the existing graph in place to match the provided nodes (by UUID).
+        // - Updates/keeps positions for existing nodes
+        // - Adds new nodes with a seeded position
+        // - Removes vanished nodes
+        // - Rebuilds edges from current nodes (router -> network)
+        pub fn reconcile(&mut self, desired_nodes: Vec<Node>) {
+            let mut rng = rand::rng();
+    
+            // 1) Desired set and quick lookup
+            let mut desired_map: HashMap<Uuid, Node> = HashMap::with_capacity(desired_nodes.len());
+            for n in desired_nodes {
+                desired_map.insert(n.id, n);
+            }
+    
+            // 2) Remove nodes that no longer exist
+            //    Collect first to avoid borrow issues during mutation.
+            let mut to_remove: Vec<Uuid> = Vec::new();
+            for (id, idx) in self.node_id_to_index_map.iter() {
+                if !desired_map.contains_key(id) {
+                    to_remove.push(*id);
+                }
+            }
+            for id in to_remove {
+                if let Some(idx) = self.node_id_to_index_map.remove(&id) {
+                    // Removing a node should drop its incident edges automatically.
+                    // Adjust this if your egui_graphs version uses a different removal API.
+                    let _ = self.graph.remove_node(idx);
+                }
+            }
+    
+            // 3) Add or update remaining nodes
+            for (id, desired) in desired_map.iter() {
+                if let Some(&idx) = self.node_id_to_index_map.get(id) {
+                    // Update label/color (keep position and index stable)
+                    if let Some(node) = self.graph.node_mut(idx) {
+                        let label = desired.label.clone().unwrap_or_else(|| {
+                            match &desired.info {
+                                NodeInfo::Network(_) => "Network".to_string(),
+                                NodeInfo::Router(_) => "Router".to_string()
+                            }
+                        });
+    
+                        let node_color = match &desired.info {
+                            NodeInfo::Network(_) => Color32::GREEN,
+                            NodeInfo::Router(_) => Color32::BLUE,
+                        };
+    
+                        node.set_label(label);
+                        node.set_color(node_color);
+    
+                        // If you want to fully replace the payload, expose a method in egui_graphs::Node to set it.
+                        // If not available, consider keeping an external payload cache keyed by UUID for non-visual data.
+                    }
+                } else {
+                    // New node: add to graph and id map
+                    let idx = self.graph.add_node(desired.clone());
+    
+                    // Seed a position near origin or random small radius.
+                    // You could improve this by seeding near attached routers/networks when available.
+                    let pos = Pos2::new(rng.random_range(0.0..40.0), rng.random_range(0.0..40.0));
+                    if let Some(n) = self.graph.node_mut(idx) {
+                        n.set_location(pos);
+    
+                        let node_color = match &desired.info {
+                            NodeInfo::Network(_) => Color32::GREEN,
+                            NodeInfo::Router(_) => Color32::BLUE,
+                        };
+                        let label = desired.label.clone().unwrap_or_else(|| {
+                            match &desired.info {
+                                NodeInfo::Network(_) => "Network".to_string(),
+                                NodeInfo::Router(_) => "Router".to_string()
+                            }
+                        });
+                        n.set_label(label);
+                        n.set_color(node_color);
+                    }
+    
+                    self.node_id_to_index_map.insert(*id, idx);
+                }
+            }
+    
+            // 4) Rebuild edges to reflect current nodes (router -> network)
+            //    You can either diff edges or clear and rebuild. For simplicity, rebuild.
+            //    If your Graph API doesn’t have clear_edges(), remove via iteration.
+            self.clear_all_edges();
+    
+            // For each Network node present, add edges from each attached router to the network node.
+            // (Same logic as in build_new)
+            for (net_uuid, &net_idx) in self.node_id_to_index_map.iter() {
+                // We need to know if this is a network; read the payload back
+                if let Some(net_node) = self.graph.node(net_idx) {
+                    let payload = net_node.payload();
+                    if let NodeInfo::Network(network) = &payload.info {
+                        if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
+                            let r1 = network.attached_routers[0].to_uuidv5();
+                            let r2 = network.attached_routers[1].to_uuidv5();
+                            if let (Some(&r1_idx), Some(&r2_idx)) = (
+                                self.node_id_to_index_map.get(&r1),
+                                self.node_id_to_index_map.get(&r2),
+                            ) {
+                                let e1 = Edge { source_id: r1, destination_id: *net_uuid, metric: EdgeMetric::Ospf };
+                                let e2 = Edge { source_id: r2, destination_id: *net_uuid, metric: EdgeMetric::Ospf };
+                                self.graph.add_edge(r1_idx, net_idx, e1);
+                                self.graph.add_edge(r2_idx, net_idx, e2);
+                            }
+                            continue;
+                        }
+                        for rid in network.attached_routers.clone().iter().map(RouterId::to_uuidv5) {
+                            if let Some(&r_idx) = self.node_id_to_index_map.get(&rid) {
+                                let e = Edge { source_id: rid, destination_id: *net_uuid, metric: EdgeMetric::Ospf };
+                                self.graph.add_edge(r_idx, net_idx, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    
+        // Helper: remove all edges from the graph.
+        // Implement using your egui_graphs version’s edge removal API.
+        fn clear_all_edges(&mut self) {
+            let edge_indices: Vec<_> = self.graph.edges_iter().map(|(ei, _)| ei).collect();
+            for ei in edge_indices {
+                let _ = self.graph.remove_edge(ei);
+            }
+        }
 }

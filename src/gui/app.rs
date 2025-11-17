@@ -1,15 +1,15 @@
 use std::{sync::Arc, time::Instant};
 
-use crate::gui::node_panel::{FloatingNodePanel, collapsible_section, label_editor_row};
+use crate::gui::node_panel::{FloatingNodePanel, collapsible_section};
 use crate::topology::source::SnapshotSource;
+use crate::topology::store::TopologyStore;
 use crate::{
     gui::node_shape::{LabelOverlay, MyNodeShape, clear_label_overlays, take_label_overlays},
     network::{network_graph::NetworkGraph, node::Node},
-    topology::{OspfSnmpTopology},
+    topology::OspfSnmpTopology,
 };
-use crate::topology::store::TopologyStore;
 use eframe::egui;
-use egui::{CentralPanel, CollapsingHeader, Context, Id, Separator, SidePanel, TextEdit};
+use egui::{CentralPanel, CollapsingHeader, Context, Id, Separator, SidePanel, Ui};
 use egui_graphs::{
     DefaultEdgeShape, FruchtermanReingoldWithCenterGravity,
     FruchtermanReingoldWithCenterGravityState, LayoutForceDirected, SettingsInteraction,
@@ -25,12 +25,12 @@ pub fn main(rt: Arc<Runtime>) {
         native_options,
         Box::new(|cc| {
             let app = rt.block_on(App::new(cc, rt.clone()));
-            
+
             match app {
                 Ok(app) => Ok(Box::new(app) as Box<dyn eframe::App>),
-                Err(e) => Err(e.into())
+                Err(e) => Err(e.into()),
             }
-            
+
             // if let Ok(app) = app {
             //     Ok(Box::new(app) as Box<dyn eframe::App>)
             // } else {
@@ -68,7 +68,7 @@ struct App {
     live_view_only: bool,
 
     graph: NetworkGraph,
-    label_input: String,
+
     selected_node: Option<NodeIndex>,
     runtime: Arc<Runtime>,
     layout_state: LayoutState,
@@ -102,7 +102,7 @@ impl App {
             store,
             live_view_only: true,
             graph,
-            label_input: String::default(),
+
             selected_node: Option::default(),
             runtime,
             layout_state,
@@ -112,26 +112,14 @@ impl App {
     fn read_data(&mut self) {
         if let Some(node_index) = self.graph.graph.selected_nodes().first() {
             self.selected_node = Some(*node_index);
-            self.label_input = self.graph.graph.node(*node_index).unwrap().label();
         }
     }
 
-    fn update_data(&mut self) {
-        if let Some(index) = self.selected_node {
-            if index.index().to_string() == self.label_input {
-                return;
-            }
-
-            self.graph
-                .graph
-                .node_mut(index)
-                .expect("Failed to get mutable node in update_data")
-                .set_label(self.label_input.clone());
-        }
-    }
+    // update_data removed: label edits now apply directly via floating panel
 
     fn render(&mut self, ctx: &Context) {
-        SidePanel::right("right_panel").show(ctx, |ui| {
+        
+        let render_side_panel = |ui: &mut Ui| {
             // Live vs merged toggle
             if ui.checkbox(&mut self.live_view_only, "Live view (only connected sources)").changed()
             {
@@ -141,14 +129,10 @@ impl App {
 
             ui.separator();
             ui.label("Change node label");
-            ui.add_enabled_ui(self.selected_node.is_some(), |ui| {
-                TextEdit::multiline(&mut self.label_input)
-                    .hint_text("Select node")
-                    .show(ui)
-            });
+            ui.label("Select a node; its label can be edited in the floating panel.");
             if ui.button("Poll source and rebuild graph").clicked() {
                 let rt = self.runtime.clone();
-                rt.block_on(self.refresh_from_source(ui));
+                rt.block_on(self.refresh_from_source());
             }
             ui.add(Separator::default());
 
@@ -180,7 +164,9 @@ impl App {
                     });
                 });
             });
-        });
+        };
+        
+        SidePanel::right("right_panel").show(ctx, render_side_panel);
 
         CentralPanel::default().show(ctx, |ui| {
             egui_graphs::set_layout_state(ui, self.layout_state.clone(), None);
@@ -207,32 +193,43 @@ impl App {
 
             // Add widget and obtain response so we can overlay labels afterwards.
             let _response = ui.add(widget);
-
+            
+            let render_node_label = |ui: &mut Ui, _ctx: &Context| {
+                collapsible_section(ui, "Connected routers", true, |ui| {
+                    ui.label("No data");
+                });
+                ui.add_space(8.0);
+                collapsible_section(ui, "Protocol Data", true, |ui| {
+                    collapsible_section(ui, "OSPF", true, |ui| {
+                        ui.label("No data");
+                    });
+                });
+            };
+            
             // Take the collected overlay labels and paint them on top of the graph widget.
             let labels: Vec<LabelOverlay> = take_label_overlays();
-            if !labels.is_empty() {
-                for (i, lbl) in labels.into_iter().enumerate() {
-                    if self.selected_node.is_some() && lbl.text == self.label_input {
-                        let id = Id::new(("node_panel", i, &lbl.text));
-                        let panel = FloatingNodePanel::new(id, lbl.center).title("Network");
-                        let _resp = panel.show(ctx, |ui, _ctx| {
-                            // Integrated label input
-                            let _ = label_editor_row(ui, &mut self.label_input);
-                            ui.add_space(8.0);
-
-                            // Modular, extensible sections
-                            collapsible_section(ui, "Connected routers", true, |ui| {
-                                ui.label("No data");
-                            });
-
-                            ui.add_space(8.0);
-
-                            collapsible_section(ui, "Protocol Data", true, |ui| {
-                                collapsible_section(ui, "OSPF", true, |ui| {
-                                    ui.label("No data");
-                                });
-                            });
-                        });
+            if let Some(sel_idx) = self.selected_node {
+                // Ensure the node is still selected in the underlying graph; if not, drop selection.
+                let still_selected =
+                    self.graph.graph.selected_nodes().first().map(|i| *i) == Some(sel_idx);
+                if !still_selected {
+                    self.selected_node = None;
+                } else if let Some(first_overlay) = labels.into_iter().next() {
+                    let id = Id::new(("node_panel", sel_idx.index()));
+                    let panel = FloatingNodePanel::new(id, first_overlay.center);
+                    let mut working_label =
+                        self.graph.graph.node(sel_idx).unwrap().label().to_string();
+                    let resp = panel.show_with_label(ctx, &mut working_label, render_node_label);
+                    if resp.label_changed {
+                        if let Some(node) = self.graph.graph.node_mut(sel_idx) {
+                            node.set_label(working_label);
+                        }
+                    }
+                    if resp.close_clicked {
+                        // Deselect node when panel is closed to prevent flicker on hover of other nodes.
+                        self.selected_node = None;
+                        // If the graph API provides a way to clear selection, call it here (left commented as placeholder):
+                        // self.graph.graph.clear_selection();
                     }
                 }
             }
@@ -240,34 +237,29 @@ impl App {
     }
 
     // Replace the partition for the currently polled source and rebuild the graph from the union.
-    async fn refresh_from_source(&mut self, ui: &mut egui::Ui) {
-        self.label_input.clear();
+    async fn refresh_from_source(&mut self) {
+        // label_input removed: no clearing necessary
         self.selected_node = None;
 
-        let now = Instant::now();
+        let now = std::time::Instant::now();
 
         // Fetch SourceId first so we can mark it lost if node fetch fails.
         let src_id = self.topo.fetch_source_id().await;
         match src_id {
-            Ok(src) => {
-                match self.topo.fetch_nodes().await {
-                    Ok(nodes) => {
-                        self.store.replace_partition(src, nodes, now);
-                        let merged = self.store.union_nodes(self.live_view_only);
-                        self.graph = NetworkGraph::build_new(merged);
-                        egui_graphs::reset::<egui_graphs::LayoutStateRandom>(ui, None);
-                    }
-                    Err(e) => {
-                        // Acquisition failed after we identified the source: mark it lost and rebuild.
-                        self.store.mark_lost(&src, now);
-                        let merged = self.store.union_nodes(self.live_view_only);
-                        self.graph = NetworkGraph::build_new(merged);
-                        eprintln!("Failed to fetch topology nodes: {:?}", e);
-                    }
+            Ok(src) => match self.topo.fetch_nodes().await {
+                Ok(nodes) => {
+                    self.store.replace_partition(src, nodes, now);
+                    let merged = self.store.union_nodes(self.live_view_only);
+                    self.graph.reconcile(merged);
                 }
-            }
+                Err(e) => {
+                    self.store.mark_lost(&src, now);
+                    let merged = self.store.union_nodes(self.live_view_only);
+                    self.graph.reconcile(merged);
+                    eprintln!("Failed to fetch topology nodes: {:?}", e);
+                }
+            },
             Err(e) => {
-                // Could not even read the SourceId; nothing to update, just log.
                 eprintln!("Failed to fetch source id: {:?}", e);
             }
         }
@@ -278,7 +270,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.read_data();
         self.render(ctx);
-        self.update_data();
+        // update_data removed (direct edit applied in panel)
     }
 }
 
