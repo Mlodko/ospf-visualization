@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
-use crate::gui::node_panel::{FloatingNodePanel, collapsible_section};
+use crate::gui::node_panel::{FloatingNodePanel, bullet_list, collapsible_section};
+use crate::network::node::NodeInfo;
 use crate::topology::source::SnapshotSource;
 use crate::topology::store::TopologyStore;
 use crate::{
@@ -194,17 +195,6 @@ impl App {
             // Add widget and obtain response so we can overlay labels afterwards.
             let _response = ui.add(widget);
             
-            let render_node_label = |ui: &mut Ui, _ctx: &Context| {
-                collapsible_section(ui, "Connected routers", true, |ui| {
-                    ui.label("No data");
-                });
-                ui.add_space(8.0);
-                collapsible_section(ui, "Protocol Data", true, |ui| {
-                    collapsible_section(ui, "OSPF", true, |ui| {
-                        ui.label("No data");
-                    });
-                });
-            };
             
             // Take the collected overlay labels and paint them on top of the graph widget.
             let labels: Vec<LabelOverlay> = take_label_overlays();
@@ -217,6 +207,26 @@ impl App {
                 } else if let Some(first_overlay) = labels.into_iter().next() {
                     let id = Id::new(("node_panel", sel_idx.index()));
                     let panel = FloatingNodePanel::new(id, first_overlay.center);
+                    
+                    let selected_node = self.graph.graph.node(sel_idx).expect("Could not find selected node");
+                    let render_node_label = |ui: &mut Ui, _ctx: &Context| {
+                        let node_info = &selected_node.props().payload.info;
+                        match node_info {
+                            NodeInfo::Router(router) => {
+                                ui.label(format!("Router ID: {}", router.id));
+                                ui.label("Rest not implemented yet");
+                            },
+                            NodeInfo::Network(net) => {
+                                ui.label(format!("Network prefix: {}", net.ip_address));
+                                ui.label(format!("Network mask: {}", net.ip_address.mask()));
+                                ui.separator();
+                                collapsible_section(ui, "Attached router IDs", true, |ui| {
+                                    bullet_list(ui, net.attached_routers.iter());
+                                });
+                            }
+                        }
+                    };
+                    
                     let mut working_label =
                         self.graph.graph.node(sel_idx).unwrap().label().to_string();
                     let resp = panel.show_with_label(ctx, &mut working_label, render_node_label);
