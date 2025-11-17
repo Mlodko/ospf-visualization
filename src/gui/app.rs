@@ -1,11 +1,13 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use crate::gui::node_panel::{FloatingNodePanel, collapsible_section, label_editor_row};
+use crate::topology::source::SnapshotSource;
 use crate::{
     gui::node_shape::{LabelOverlay, MyNodeShape, clear_label_overlays, take_label_overlays},
     network::{network_graph::NetworkGraph, node::Node},
-    topology::{OspfSnmpTopology, TopologySource},
+    topology::{OspfSnmpTopology},
 };
+use crate::topology::store::TopologyStore;
 use eframe::egui;
 use egui::{CentralPanel, CollapsingHeader, Context, Id, Separator, SidePanel, TextEdit};
 use egui_graphs::{
@@ -23,11 +25,17 @@ pub fn main(rt: Arc<Runtime>) {
         native_options,
         Box::new(|cc| {
             let app = rt.block_on(App::new(cc, rt.clone()));
-            if let Ok(app) = app {
-                Ok(Box::new(app) as Box<dyn eframe::App>)
-            } else {
-                Err("Failed to create app".into())
+            
+            match app {
+                Ok(app) => Ok(Box::new(app) as Box<dyn eframe::App>),
+                Err(e) => Err(e.into())
             }
+            
+            // if let Ok(app) = app {
+            //     Ok(Box::new(app) as Box<dyn eframe::App>)
+            // } else {
+            //     Err("Failed to create app".into())
+            // }
         }),
     );
 
@@ -55,7 +63,10 @@ impl std::fmt::Display for RuntimeError {
 impl std::error::Error for RuntimeError {}
 
 struct App {
-    topo: Box<dyn TopologySource>,
+    topo: Box<dyn SnapshotSource>,
+    store: TopologyStore,
+    live_view_only: bool,
+
     graph: NetworkGraph,
     label_input: String,
     selected_node: Option<NodeIndex>,
@@ -71,18 +82,25 @@ impl App {
         let _ = cc; // silence unused variable warning for now
 
         let snmp_client = crate::data_aquisition::snmp::SnmpClient::default();
-        let mut topo: Box<dyn TopologySource> = Box::new(OspfSnmpTopology::new(snmp_client));
-        let nodes: Vec<Node> = match topo.fetch_nodes().await {
-            Ok(nodes) => nodes,
-            Err(e) => {
-                eprintln!("Failed to fetch topology nodes: {:?}", e);
-                return Err(RuntimeError::TopologyFetchError(e.to_string()));
-            }
-        };
-        let graph = NetworkGraph::build_new(nodes);
+        let mut topo: Box<dyn SnapshotSource> = Box::new(OspfSnmpTopology::new(snmp_client));
+        let mut store = TopologyStore::default();
+
+        // First snapshot: replace partition and build union (live-only)
+        let now = Instant::now();
+        let (src, nodes) = topo
+            .fetch_snapshot()
+            .await
+            .map_err(|e| RuntimeError::TopologyFetchError(e.to_string()))?;
+        store.replace_partition(src, nodes, now);
+
+        let merged: Vec<Node> = store.union_nodes(true);
+        let graph = NetworkGraph::build_new(merged);
         let layout_state = LayoutState::default();
+
         Ok(Self {
             topo,
+            store,
+            live_view_only: true,
             graph,
             label_input: String::default(),
             selected_node: Option::default(),
@@ -114,48 +132,56 @@ impl App {
 
     fn render(&mut self, ctx: &Context) {
         SidePanel::right("right_panel").show(ctx, |ui| {
+            // Live vs merged toggle
+            if ui.checkbox(&mut self.live_view_only, "Live view (only connected sources)").changed()
+            {
+                let merged = self.store.union_nodes(self.live_view_only);
+                self.graph = NetworkGraph::build_new(merged);
+            }
+
+            ui.separator();
             ui.label("Change node label");
             ui.add_enabled_ui(self.selected_node.is_some(), |ui| {
                 TextEdit::multiline(&mut self.label_input)
                     .hint_text("Select node")
                     .show(ui)
             });
-            if ui.button("Reset and reload graph").clicked() {
-                //let rt = tokio::runtime::Runtime::new().expect("Failed to initialize runtime");
+            if ui.button("Poll source and rebuild graph").clicked() {
                 let rt = self.runtime.clone();
-                rt.block_on(self.reset(ui));
+                rt.block_on(self.refresh_from_source(ui));
             }
             ui.add(Separator::default());
 
             // Forces section
             CollapsingHeader::new("Forces").default_open(true).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.add(egui::Slider::new(&mut self.layout_state.base.k_scale, 0.2..=3.0).text("k_scale"));
-                info_icon(ui, "Scale ideal edge length k; >1 spreads the layout, <1 compacts it.");
-            });
-            ui.horizontal(|ui| {
-                ui.add(egui::Slider::new(&mut self.layout_state.base.c_attract, 0.1..=3.0).text("c_attract"));
-                info_icon(ui, "Multiplier for attractive force along edges (higher pulls connected nodes together).");
-            });
-            ui.horizontal(|ui| {
-                ui.add(egui::Slider::new(&mut self.layout_state.base.c_repulse, 0.1..=3.0).text("c_repulse"));
-                info_icon(ui, "Multiplier for repulsive force between nodes (higher pushes nodes apart).");
-            });
-
-            ui.separator();
-            ui.label("Extras");
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut self.layout_state.extras.0.enabled, "center_gravity");
-                info_icon(ui, "Enable/disable center gravity force.");
-            });
-            ui.add_enabled_ui(self.layout_state.extras.0.enabled, |ui| {
                 ui.horizontal(|ui| {
-                    ui.add(egui::Slider::new(&mut self.layout_state.extras.0.params.c, 0.0..=2.0).text("center_strength"));
-                    info_icon(ui, "Coefficient for pull toward viewport/graph center.");
+                    ui.add(egui::Slider::new(&mut self.layout_state.base.k_scale, 0.2..=3.0).text("k_scale"));
+                    info_icon(ui, "Scale ideal edge length k; >1 spreads the layout, <1 compacts it.");
+                });
+                ui.horizontal(|ui| {
+                    ui.add(egui::Slider::new(&mut self.layout_state.base.c_attract, 0.1..=3.0).text("c_attract"));
+                    info_icon(ui, "Multiplier for attractive force along edges (higher pulls connected nodes together).");
+                });
+                ui.horizontal(|ui| {
+                    ui.add(egui::Slider::new(&mut self.layout_state.base.c_repulse, 0.1..=3.0).text("c_repulse"));
+                    info_icon(ui, "Multiplier for repulsive force between nodes (higher pushes nodes apart).");
+                });
+
+                ui.separator();
+                ui.label("Extras");
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.layout_state.extras.0.enabled, "center_gravity");
+                    info_icon(ui, "Enable/disable center gravity force.");
+                });
+                ui.add_enabled_ui(self.layout_state.extras.0.enabled, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Slider::new(&mut self.layout_state.extras.0.params.c, 0.0..=2.0).text("center_strength"));
+                        info_icon(ui, "Coefficient for pull toward viewport/graph center.");
+                    });
                 });
             });
         });
-        });
+
         CentralPanel::default().show(ctx, |ui| {
             egui_graphs::set_layout_state(ui, self.layout_state.clone(), None);
 
@@ -213,23 +239,38 @@ impl App {
         });
     }
 
-    async fn reset(&mut self, ui: &mut egui::Ui) {
-        println!("resetting");
-        self.label_input = String::default();
-        self.selected_node = Option::default();
+    // Replace the partition for the currently polled source and rebuild the graph from the union.
+    async fn refresh_from_source(&mut self, ui: &mut egui::Ui) {
+        self.label_input.clear();
+        self.selected_node = None;
 
-        let nodes: Vec<Node> = match self.topo.fetch_nodes().await {
-            Ok(nodes) => nodes,
-            Err(e) => {
-                eprintln!("Failed to fetch topology nodes: {:?}", e);
-                return;
+        let now = Instant::now();
+
+        // Fetch SourceId first so we can mark it lost if node fetch fails.
+        let src_id = self.topo.fetch_source_id().await;
+        match src_id {
+            Ok(src) => {
+                match self.topo.fetch_nodes().await {
+                    Ok(nodes) => {
+                        self.store.replace_partition(src, nodes, now);
+                        let merged = self.store.union_nodes(self.live_view_only);
+                        self.graph = NetworkGraph::build_new(merged);
+                        egui_graphs::reset::<egui_graphs::LayoutStateRandom>(ui, None);
+                    }
+                    Err(e) => {
+                        // Acquisition failed after we identified the source: mark it lost and rebuild.
+                        self.store.mark_lost(&src, now);
+                        let merged = self.store.union_nodes(self.live_view_only);
+                        self.graph = NetworkGraph::build_new(merged);
+                        eprintln!("Failed to fetch topology nodes: {:?}", e);
+                    }
+                }
             }
-        };
-
-        let graph = NetworkGraph::build_new(nodes);
-        println!("built new graph");
-        self.graph = graph;
-        egui_graphs::reset::<egui_graphs::LayoutStateRandom>(ui, None);
+            Err(e) => {
+                // Could not even read the SourceId; nothing to update, just log.
+                eprintln!("Failed to fetch source id: {:?}", e);
+            }
+        }
     }
 }
 

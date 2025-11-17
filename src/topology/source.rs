@@ -13,7 +13,7 @@ use std::fmt::Display;
 
 use async_trait::async_trait;
 
-use crate::network::node::Node;
+use crate::network::{node::Node, router::RouterId};
 
 /// Error type for topology retrieval.
 #[derive(Debug, Clone)]
@@ -40,6 +40,19 @@ impl std::error::Error for TopologyError {}
 #[async_trait]
 pub trait TopologySource: Send + Sync {
     async fn fetch_nodes(&mut self) -> TopologyResult<Vec<Node>>;
+}
+
+type SourceId = RouterId;
+
+#[async_trait]
+pub trait SnapshotSource: TopologySource {
+    async fn fetch_source_id(&mut self) -> TopologyResult<SourceId>;
+    
+    async fn fetch_snapshot(&mut self) -> TopologyResult<(SourceId, Vec<Node>)> {
+        let source_id = self.fetch_source_id().await?;
+        let nodes = self.fetch_nodes().await?;
+        Ok((source_id, nodes))
+    }
 }
 
 /// Convenience result alias for topology operations.

@@ -1,12 +1,12 @@
-use std::str::FromStr;
+use std::{fmt::format, str::FromStr};
 
 use async_trait::async_trait;
 use snmp2::Oid;
 
-use crate::data_aquisition::{
-    core::LinkStateValue,
+use crate::{data_aquisition::{
+    core::{LinkStateValue, RawRouterData},
     snmp::{SnmpClient, SnmpTableRow},
-};
+}, network::router::RouterId};
 use crate::parsers::ospf_parser::source::{OspfDataSource, OspfRawRow, OspfSourceError};
 
 /// OSPF-over-SNMP adapter that implements the protocol-centric OspfDataSource.
@@ -19,6 +19,22 @@ pub struct OspfSnmpSource {
 impl OspfSnmpSource {
     pub fn new(client: SnmpClient) -> Self {
         Self { client }
+    }
+    
+    pub async fn fetch_source_id(&mut self) -> Result<RouterId, OspfSourceError> {
+        let oid = Oid::from_str("1.3.6.1.2.1.14.1.1.0").unwrap();
+        let response = self.client
+            .query().await.map_err(|e| OspfSourceError::Acquisition(format!("{e:?}")))?
+            .get().oid(oid)
+            .execute().await
+            .map_err(|e| OspfSourceError::Acquisition(format!("{e:?}")))?;
+        match response.first() {
+            Some(RawRouterData::Snmp { value: LinkStateValue::IpAddress(ip), .. }) => {
+                Ok(RouterId::Ipv4(*ip))
+            }
+            Some(other) => Err(OspfSourceError::Invalid(format!("unexpected ospfRouterId: {other:?}"))),
+            None => Err(OspfSourceError::Invalid("missing ospfRouterId".into())),
+        }
     }
 }
 

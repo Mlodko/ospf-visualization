@@ -16,6 +16,7 @@ Re-exports:
 
 pub mod ospf;
 pub mod source;
+pub mod store;
 
 pub use ospf::OspfSnmpTopology;
 pub use source::{TopologySource};

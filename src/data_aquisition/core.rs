@@ -5,6 +5,7 @@ use std::net::Ipv4Addr;
 use snmp2::{Oid, Value};
 
 /// Represents raw data retrieved from a network device along with the protocol used to retrieve it.
+#[derive(Debug, Clone)]
 pub enum RawRouterData<'a> {
     Snmp {
         oid: Oid<'a>,
