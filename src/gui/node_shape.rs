@@ -7,6 +7,8 @@ use egui::{
 use egui_graphs::{DisplayNode, DrawContext, NodeProps};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
+use crate::network::node::Node;
+
 #[derive(Clone)]
 pub struct MyNodeShape {
     pub label: String,
@@ -16,6 +18,8 @@ pub struct MyNodeShape {
     pub selected: bool,
     pub dragged: bool,
     pub hovered: bool,
+    pub highlighted: bool,
+    pub inter_area: bool
 }
 
 // Thread-local overlay collector populated during shapes() and consumed after the GraphView is drawn.
@@ -39,8 +43,9 @@ pub fn take_label_overlays() -> Vec<LabelOverlay> {
     LABEL_OVERLAY.with(|v| v.borrow_mut().drain(..).collect())
 }
 
-impl<N: Clone> From<NodeProps<N>> for MyNodeShape {
-    fn from(node_props: NodeProps<N>) -> Self {
+impl From<NodeProps<Node>> for MyNodeShape {
+    fn from(node_props: NodeProps<Node>) -> Self {
+        let inter_area = node_props.payload.is_inter_area();
         Self {
             pos: node_props.location(),
             color: node_props.color(),
@@ -48,13 +53,14 @@ impl<N: Clone> From<NodeProps<N>> for MyNodeShape {
             selected: node_props.selected,
             dragged: node_props.dragged,
             hovered: node_props.hovered,
-
+            highlighted: false,
             radius: 5f32,
+            inter_area,
         }
     }
 }
 
-impl<N: Clone, E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<N, E, Ty, Ix> for MyNodeShape {
+impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for MyNodeShape {
     fn closest_boundary_point(&self, dir: Vec2) -> Pos2 {
         closest_point_on_circle(self.pos, self.radius, dir)
     }
@@ -66,7 +72,8 @@ impl<N: Clone, E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<N, E, Ty, Ix> 
     fn shapes(&mut self, ctx: &egui_graphs::DrawContext) -> Vec<Shape> {
         // Only return the circle shape to avoid causing egui_graphs edge hit-testing to panic
         // when encountering Rect/Text shapes. For labels, collect overlay draw data instead.
-        let mut res = Vec::with_capacity(1);
+        let capacity = if self.highlighted { 2 } else { 1 };
+        let mut res = Vec::with_capacity(capacity);
         let circle_center = ctx.meta.canvas_to_screen_pos(self.pos);
         let circle_radius = ctx.meta.canvas_to_screen_size(self.radius);
         let color = self.effective_color(ctx);
@@ -81,6 +88,17 @@ impl<N: Clone, E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<N, E, Ty, Ix> 
             }
             .into(),
         );
+        
+        if self.highlighted {
+            res.push(
+                CircleShape {
+                    center: circle_center,
+                    radius: circle_radius * 1.3,
+                    fill: Color32::TRANSPARENT,
+                    stroke
+                }.into()
+            )
+        }
 
         // Collect overlay label info for interacted nodes (selected/hovered/dragged).
         if self.is_interacted() {
@@ -97,7 +115,7 @@ impl<N: Clone, E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<N, E, Ty, Ix> 
         res
     }
 
-    fn update(&mut self, state: &NodeProps<N>) {
+    fn update(&mut self, state: &NodeProps<Node>) {
         self.pos = state.location();
         self.selected = state.selected;
         self.dragged = state.dragged;

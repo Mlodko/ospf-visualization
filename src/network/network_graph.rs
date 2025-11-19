@@ -51,7 +51,7 @@ impl NetworkGraph {
         for net_index in graph.node_indices() {
             if let NodeInfo::Network(network) = &graph[net_index].info {
                 let net_id = graph[net_index].id;
-
+                
                 // If only 2 routers are attached, connect them directly and remove the network node
                 if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
                     let router1_id = network.attached_routers[0].to_uuidv5();
@@ -134,9 +134,14 @@ impl NetworkGraph {
             // Set color based on node type
             let router_color = Color32::BLUE;
             let network_color = Color32::GREEN;
-            let node_color = match &payload.info {
+            let inter_area_color = Color32::LIGHT_GREEN;
+            let node_color = if payload.is_inter_area() {
+                inter_area_color
+            } else {
+                match &payload.info {
                 NodeInfo::Network(_) => network_color,
                 NodeInfo::Router(_) => router_color,
+                }
             };
             node.set_label(label);
             node.set_color(node_color);
@@ -189,10 +194,19 @@ impl NetworkGraph {
                                 NodeInfo::Router(_) => "Router".to_string()
                             }
                         });
-    
-                        let node_color = match &desired.info {
-                            NodeInfo::Network(_) => Color32::GREEN,
-                            NodeInfo::Router(_) => Color32::BLUE,
+                        
+                        let payload = node.payload();
+                        
+                        let router_color = Color32::BLUE;
+                        let network_color = Color32::GREEN;
+                        let inter_area_color = Color32::LIGHT_GREEN;
+                        let node_color = if payload.is_inter_area() {
+                            inter_area_color
+                        } else {
+                            match &payload.info {
+                            NodeInfo::Network(_) => network_color,
+                            NodeInfo::Router(_) => router_color,
+                            }
                         };
     
                         node.set_label(label);
@@ -211,9 +225,18 @@ impl NetworkGraph {
                     if let Some(n) = self.graph.node_mut(idx) {
                         n.set_location(pos);
     
-                        let node_color = match &desired.info {
-                            NodeInfo::Network(_) => Color32::GREEN,
-                            NodeInfo::Router(_) => Color32::BLUE,
+                        let payload = n.payload();
+                        
+                        let router_color = Color32::BLUE;
+                        let network_color = Color32::GREEN;
+                        let inter_area_color = Color32::LIGHT_GREEN;
+                        let node_color = if payload.is_inter_area() {
+                            inter_area_color
+                        } else {
+                            match &payload.info {
+                            NodeInfo::Network(_) => network_color,
+                            NodeInfo::Router(_) => router_color,
+                            }
                         };
                         let label = desired.label.clone().unwrap_or_else(|| {
                             match &desired.info {

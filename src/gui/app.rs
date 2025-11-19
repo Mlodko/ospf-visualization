@@ -165,6 +165,14 @@ impl App {
                     });
                 });
             });
+            
+            ui.separator();
+            ui.collapsing("egui debug", |ui| {
+                // Clone, edit via built-in UI, then apply:
+                let mut style = (*ctx.style()).clone();
+                style.debug.ui(ui); // renders controls for all DebugOptions
+                ctx.set_style(style);
+            });
         };
         
         SidePanel::right("right_panel").show(ctx, render_side_panel);
@@ -228,7 +236,7 @@ impl App {
                     };
                     
                     let mut working_label =
-                        self.graph.graph.node(sel_idx).unwrap().label().to_string();
+                        selected_node.label().to_string();
                     let resp = panel.show_with_label(ctx, &mut working_label, render_node_label);
                     if resp.label_changed {
                         if let Some(node) = self.graph.graph.node_mut(sel_idx) {

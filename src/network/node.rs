@@ -25,6 +25,23 @@ impl Node {
             id: uuid
         }
     }
+    
+    /// Inter-area if derived from a Type 3 Summary LSA (or later from Type 4 when you map it).
+    pub fn is_inter_area(&self) -> bool {
+        match &self.info {
+            NodeInfo::Network(net) => {
+                if let Some(ProtocolData::Ospf(data)) = &net.protocol_data {
+                    matches!(*data.advertisement, OspfLinkStateAdvertisement::SummaryLinkIpNetwork(_))
+                } else {
+                    false
+                }
+            }
+            NodeInfo::Router(_r) => {
+                // Optional future logic: if router is ABR (multiple areas or has summary LSAs)
+                false
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

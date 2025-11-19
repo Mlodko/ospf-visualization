@@ -66,6 +66,9 @@ impl TryInto<Node> for OspfLsdbEntry {
             OspfLinkStateAdvertisement::NetworkLinks(_) => {
                 NodeInfo::Network(parse_lsa_type_2_to_network(&self)?)
             }
+            OspfLinkStateAdvertisement::SummaryLinkIpNetwork(_) => {
+                NodeInfo::Network(parse_lsa_type_3(&self)?)
+            }
             _ => {
                 println!("Unsupported advertisement type");
                 return Err(LsaError::InvalidLsaType);
@@ -131,7 +134,30 @@ pub fn parse_lsa_type_2_to_network(lsa: &OspfLsdbEntry) -> Result<Network, LsaEr
     Ok(Network {
         ip_address: network,
         protocol_data: Some(protocol_data),
-        attached_routers,
+        attached_routers: attached_routers,
+    })
+}
+
+pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
+    let adv = if let OspfLinkStateAdvertisement::SummaryLinkIpNetwork(ad) = &*lsa.advertisement {
+        ad
+    } else {
+        return Err(LsaError::InvalidLsaType);
+    };
+    let net_addr = IpNetwork::with_netmask(
+        IpAddr::V4(lsa.link_state_id),
+        IpAddr::V4(adv.network_mask()) 
+    ).map_err(|_| LsaError::InvalidNetworkMask(adv.network_mask()))?;
+    
+    let protocol_data = ProtocolData::Ospf(OspfData { 
+        area_id: lsa.area_id, 
+        advertisement: lsa.advertisement.clone() 
+    });
+    
+    Ok(Network { 
+        ip_address: net_addr, 
+        protocol_data: Some(protocol_data), 
+        attached_routers: vec![RouterId::Ipv4(lsa.router_id)]
     })
 }
 

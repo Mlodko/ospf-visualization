@@ -237,7 +237,7 @@ impl FloatingNodePanel {
             .show(ctx, |ui| {
                 let mut frame = Frame::popup(ui.style());
                 frame.show(ui, |ui| {
-                    ui.set_min_width(self.options.min_width);
+                    //ui.set_min_width(self.options.min_width);
                     ui.horizontal(|ui| {
                         // Direct edit of node label
                         let resp =
@@ -245,6 +245,8 @@ impl FloatingNodePanel {
                         if resp.changed() {
                             label_changed_flag = true;
                         }
+                    
+                        /*
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
                                 .add(egui::Button::new("✕").small())
@@ -266,6 +268,7 @@ impl FloatingNodePanel {
                                 pinned_state = !pinned_state;
                             }
                         });
+                        */
                     });
                     ui.add_space(6.0);
                     add_contents(ui, ctx);
@@ -297,7 +300,7 @@ pub fn collapsible_section(
     collapsing.show(ui, |ui| {
         // Group frame to visually separate the section body
         Frame::group(ui.style()).show(ui, |ui| {
-            ui.set_width(ui.available_width());
+            //ui.set_width(ui.available_width());
             add_contents(ui);
         });
     });
