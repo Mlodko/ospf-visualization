@@ -1,37 +1,45 @@
 use std::net::Ipv4Addr;
 
+use crate::network::router::{Router, RouterId};
 use ipnetwork::IpNetwork;
 use ospf_parser::OspfLinkStateAdvertisement;
 use uuid::Uuid;
-use crate::network::router::{Router, RouterId};
 
 /// Represents a node in the protocol-agnostic network graph. Multiple access networks and aggregates are represented by the Network variant.
 #[derive(Debug, Clone)]
 pub struct Node {
     pub info: NodeInfo,
     pub label: Option<String>,
-    pub id: Uuid
+    pub source_id: Option<RouterId>,
+    pub id: Uuid,
 }
 
 impl Node {
     pub fn new(info: NodeInfo, label: Option<String>) -> Self {
         let uuid = match &info {
             NodeInfo::Router(router) => router.id.to_uuidv5(),
-            NodeInfo::Network(network) => Uuid::new_v5(&Uuid::NAMESPACE_OID, network.ip_address.to_string().as_bytes()),
+            NodeInfo::Network(network) => Uuid::new_v5(
+                &Uuid::NAMESPACE_OID,
+                network.ip_address.to_string().as_bytes(),
+            ),
         };
         Self {
             info,
             label,
-            id: uuid
+            source_id: None,
+            id: uuid,
         }
     }
-    
+
     /// Inter-area if derived from a Type 3 Summary LSA (or later from Type 4 when you map it).
     pub fn is_inter_area(&self) -> bool {
         match &self.info {
             NodeInfo::Network(net) => {
                 if let Some(ProtocolData::Ospf(data)) = &net.protocol_data {
-                    matches!(*data.advertisement, OspfLinkStateAdvertisement::SummaryLinkIpNetwork(_))
+                    matches!(
+                        *data.advertisement,
+                        OspfLinkStateAdvertisement::SummaryLinkIpNetwork(_)
+                    )
                 } else {
                     false
                 }
@@ -47,7 +55,7 @@ impl Node {
 #[derive(Debug, Clone)]
 pub enum NodeInfo {
     Router(Router),
-    Network(Network)
+    Network(Network),
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +63,7 @@ pub enum NodeInfo {
 pub struct Network {
     pub ip_address: IpNetwork,
     pub protocol_data: Option<ProtocolData>,
-    pub attached_routers: Vec<RouterId>
+    pub attached_routers: Vec<RouterId>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,5 +83,5 @@ pub struct IsIsData {
 pub enum ProtocolData {
     Ospf(OspfData),
     IsIs(IsIsData),
-    Other(String)
+    Other(String),
 }

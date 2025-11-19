@@ -1,11 +1,14 @@
 use std::{sync::Arc, time::Instant};
 
 use crate::gui::node_panel::{FloatingNodePanel, bullet_list, collapsible_section};
-use crate::network::node::NodeInfo;
+use crate::network::node::{NodeInfo, ProtocolData};
 use crate::topology::source::SnapshotSource;
 use crate::topology::store::TopologyStore;
 use crate::{
-    gui::node_shape::{LabelOverlay, MyNodeShape, clear_label_overlays, take_label_overlays},
+    gui::node_shape::{
+        LabelOverlay, MyNodeShape, clear_area_highlight, clear_label_overlays,
+        partition_highlight_enabled, set_partition_highlight_enabled, take_label_overlays,
+    },
     network::{network_graph::NetworkGraph, node::Node},
     topology::OspfSnmpTopology,
 };
@@ -119,15 +122,27 @@ impl App {
     // update_data removed: label edits now apply directly via floating panel
 
     fn render(&mut self, ctx: &Context) {
-        
         let render_side_panel = |ui: &mut Ui| {
             // Live vs merged toggle
-            if ui.checkbox(&mut self.live_view_only, "Live view (only connected sources)").changed()
+            if ui
+                .checkbox(
+                    &mut self.live_view_only,
+                    "Live view (only connected sources)",
+                )
+                .changed()
             {
                 let merged = self.store.union_nodes(self.live_view_only);
                 self.graph = NetworkGraph::build_new(merged);
             }
 
+            let mut highlight_enabled = partition_highlight_enabled();
+            if ui
+                .checkbox(&mut highlight_enabled, "Partition highlight")
+                .on_hover_text("Toggle partition-wide highlight on hover")
+                .changed()
+            {
+                set_partition_highlight_enabled(highlight_enabled);
+            }
             ui.separator();
             ui.label("Change node label");
             ui.label("Select a node; its label can be edited in the floating panel.");
@@ -165,7 +180,7 @@ impl App {
                     });
                 });
             });
-            
+
             ui.separator();
             ui.collapsing("egui debug", |ui| {
                 // Clone, edit via built-in UI, then apply:
@@ -174,13 +189,14 @@ impl App {
                 ctx.set_style(style);
             });
         };
-        
+
         SidePanel::right("right_panel").show(ctx, render_side_panel);
 
         CentralPanel::default().show(ctx, |ui| {
             egui_graphs::set_layout_state(ui, self.layout_state.clone(), None);
 
-            // Clear collector before drawing graph so shapes() will populate it during widget draw.
+            // Reset area highlight and clear collector before drawing graph so shapes() will populate them during widget draw.
+            clear_area_highlight();
             clear_label_overlays();
 
             let widget = &mut egui_graphs::GraphView::<
@@ -202,8 +218,7 @@ impl App {
 
             // Add widget and obtain response so we can overlay labels afterwards.
             let _response = ui.add(widget);
-            
-            
+
             // Take the collected overlay labels and paint them on top of the graph widget.
             let labels: Vec<LabelOverlay> = take_label_overlays();
             if let Some(sel_idx) = self.selected_node {
@@ -215,18 +230,28 @@ impl App {
                 } else if let Some(first_overlay) = labels.into_iter().next() {
                     let id = Id::new(("node_panel", sel_idx.index()));
                     let panel = FloatingNodePanel::new(id, first_overlay.center);
-                    
-                    let selected_node = self.graph.graph.node(sel_idx).expect("Could not find selected node");
+
+                    let selected_node = self
+                        .graph
+                        .graph
+                        .node(sel_idx)
+                        .expect("Could not find selected node");
                     let render_node_label = |ui: &mut Ui, _ctx: &Context| {
                         let node_info = &selected_node.props().payload.info;
                         match node_info {
                             NodeInfo::Router(router) => {
                                 ui.label(format!("Router ID: {}", router.id));
+                                if let Some(ProtocolData::Ospf(data)) = &router.protocol_data {
+                                    ui.label(format!("Area ID: {}", data.area_id));
+                                }
                                 ui.label("Rest not implemented yet");
-                            },
+                            }
                             NodeInfo::Network(net) => {
                                 ui.label(format!("Network prefix: {}", net.ip_address));
                                 ui.label(format!("Network mask: {}", net.ip_address.mask()));
+                                if let Some(ProtocolData::Ospf(data)) = &net.protocol_data {
+                                    ui.label(format!("Area ID: {}", data.area_id));
+                                }
                                 ui.separator();
                                 collapsible_section(ui, "Attached router IDs", true, |ui| {
                                     bullet_list(ui, net.attached_routers.iter());
@@ -234,9 +259,8 @@ impl App {
                             }
                         }
                     };
-                    
-                    let mut working_label =
-                        selected_node.label().to_string();
+
+                    let mut working_label = selected_node.label().to_string();
                     let resp = panel.show_with_label(ctx, &mut working_label, render_node_label);
                     if resp.label_changed {
                         if let Some(node) = self.graph.graph.node_mut(sel_idx) {

@@ -146,18 +146,19 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
     };
     let net_addr = IpNetwork::with_netmask(
         IpAddr::V4(lsa.link_state_id),
-        IpAddr::V4(adv.network_mask()) 
-    ).map_err(|_| LsaError::InvalidNetworkMask(adv.network_mask()))?;
-    
-    let protocol_data = ProtocolData::Ospf(OspfData { 
-        area_id: lsa.area_id, 
-        advertisement: lsa.advertisement.clone() 
+        IpAddr::V4(adv.network_mask()),
+    )
+    .map_err(|_| LsaError::InvalidNetworkMask(adv.network_mask()))?;
+
+    let protocol_data = ProtocolData::Ospf(OspfData {
+        area_id: lsa.area_id,
+        advertisement: lsa.advertisement.clone(),
     });
-    
-    Ok(Network { 
-        ip_address: net_addr, 
-        protocol_data: Some(protocol_data), 
-        attached_routers: vec![RouterId::Ipv4(lsa.router_id)]
+
+    Ok(Network {
+        ip_address: net_addr,
+        protocol_data: Some(protocol_data),
+        attached_routers: vec![RouterId::Ipv4(lsa.router_id)],
     })
 }
 

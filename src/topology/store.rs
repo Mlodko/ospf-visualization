@@ -1,7 +1,7 @@
 #![allow(dead_code)]
+use crate::network::{node::Node, router::RouterId};
 use std::{collections::HashMap, time::Instant};
 use uuid::Uuid;
-use crate::network::{node::Node, router::RouterId};
 
 pub type SourceId = RouterId;
 
@@ -29,9 +29,9 @@ pub enum SourceHealth {
 pub struct SourceState {
     pub health: SourceHealth,
     pub partition: Partition,
-    pub last_snapshot: Instant,       // when we last replaced the snapshot successfully
-    pub last_connected: Instant,      // when acquisition last succeeded
-    pub last_status_change: Instant,  // when health last changed
+    pub last_snapshot: Instant, // when we last replaced the snapshot successfully
+    pub last_connected: Instant, // when acquisition last succeeded
+    pub last_status_change: Instant, // when health last changed
 }
 impl SourceState {
     pub fn new(partition: Partition, ts: Instant) -> Self {
@@ -52,7 +52,13 @@ pub struct TopologyStore {
 
 impl TopologyStore {
     pub fn replace_partition(&mut self, src_id: SourceId, nodes: Vec<Node>, timestamp: Instant) {
-        let part = Partition::new(nodes);
+        // annotate nodes with their source for partition-based highlighting
+        let mut annotated = Vec::with_capacity(nodes.len());
+        for mut node in nodes {
+            node.source_id = Some(src_id.clone());
+            annotated.push(node);
+        }
+        let part = Partition::new(annotated);
         match self.sources.get_mut(&src_id) {
             Some(state) => {
                 state.partition = part;
@@ -62,7 +68,8 @@ impl TopologyStore {
                 state.last_status_change = timestamp; // optional: only if you want “Connected” flips to count
             }
             None => {
-                self.sources.insert(src_id, SourceState::new(part, timestamp));
+                self.sources
+                    .insert(src_id, SourceState::new(part, timestamp));
             }
         }
     }
@@ -103,7 +110,9 @@ impl TopologyStore {
             for (id, node) in &state.partition.nodes {
                 match best.get(id) {
                     None => {
-                        best.insert(*id, (node.clone(), is_connected, state.last_snapshot, src_id));
+                        let mut n = node.clone();
+                        n.source_id = Some(src_id.clone());
+                        best.insert(*id, (n, is_connected, state.last_snapshot, src_id));
                     }
                     Some((_, best_connected, best_ts, best_src)) => {
                         let take = (!*best_connected && is_connected)
@@ -112,7 +121,9 @@ impl TopologyStore {
                                 && state.last_snapshot == *best_ts
                                 && format!("{:?}", src_id) < format!("{:?}", best_src));
                         if take {
-                            best.insert(*id, (node.clone(), is_connected, state.last_snapshot, src_id));
+                            let mut n = node.clone();
+                            n.source_id = Some(src_id.clone());
+                            best.insert(*id, (n, is_connected, state.last_snapshot, src_id));
                         }
                     }
                 }

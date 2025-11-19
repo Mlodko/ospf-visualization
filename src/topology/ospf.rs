@@ -7,6 +7,8 @@ use crate::parsers::ospf_parser::snmp_source::OspfSnmpSource;
 use crate::parsers::ospf_parser::source::{OspfDataSource, OspfSourceError};
 use crate::topology::source::{SnapshotSource, TopologyError, TopologySource};
 use crate::topology::store::SourceId;
+use std::collections::HashMap;
+use std::net::IpAddr;
 
 /// OSPF-over-SNMP implementation of the GUI-facing topology source.
 /// Internally, this uses the protocol-centric OspfDataSource (implemented by OspfSnmpSource)
@@ -55,7 +57,10 @@ impl<S: OspfDataSource + Send + Sync> TopologySource for OspfTopology<S> {
 #[async_trait]
 impl SnapshotSource for OspfTopology<OspfSnmpSource> {
     async fn fetch_source_id(&mut self) -> Result<SourceId, TopologyError> {
-        self.source.fetch_source_id().await.map_err(map_ospf_source_err)
+        self.source
+            .fetch_source_id()
+            .await
+            .map_err(map_ospf_source_err)
     }
 }
 
