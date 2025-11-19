@@ -1,5 +1,5 @@
 use egui::{
-    self, CollapsingHeader, Context, Frame, Id, InnerResponse, Order, Pos2, Response, Ui, Vec2,
+    self, CollapsingHeader, Context, Frame, Id, InnerResponse, Label, Order, Pos2, Response, Ui, Vec2
 };
 use ospf_parser::{OspfLinkStateAdvertisement, OspfRouterLinksAdvertisement};
 
@@ -151,6 +151,7 @@ impl FloatingNodePanel {
                 let mut frame = Frame::popup(ui.style());
 
                 frame.show(ui, |ui| {
+                    // Apply stored width if any; otherwise fallback to configured min_width.
                     ui.set_min_width(self.options.min_width);
 
                     // Header with title, pin, and close controls.
@@ -240,7 +241,12 @@ impl FloatingNodePanel {
             .show(ctx, |ui| {
                 let mut frame = Frame::popup(ui.style());
                 frame.show(ui, |ui| {
-                    //ui.set_min_width(self.options.min_width);
+                    // Dynamic width application (moved from show):
+                    let stored_width =
+                        ctx.data_mut(|d| d.get_persisted::<f32>(self.id.with("panel_width")));
+                    // Allow natural layout first; do not constrain min width here.
+                    // Width will be persisted after content renders for use in next frame if desired.
+
                     ui.horizontal(|ui| {
                         // Direct edit of node label
                         let resp =
@@ -248,7 +254,7 @@ impl FloatingNodePanel {
                         if resp.changed() {
                             label_changed_flag = true;
                         }
-                    
+
                         /*
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
@@ -275,6 +281,19 @@ impl FloatingNodePanel {
                     });
                     ui.add_space(6.0);
                     add_contents(ui, ctx);
+
+                    // Dynamic width persistence after content layout
+                    let content_width = ui.min_rect().width();
+                    let expansion_threshold = 4.0;
+                    let should_store = match stored_width {
+                        None => true,
+                        Some(old) => content_width > old + expansion_threshold,
+                    };
+                    if should_store {
+                        ctx.data_mut(|d| {
+                            d.insert_persisted(self.id.with("panel_width"), content_width)
+                        });
+                    }
                 });
             });
 
@@ -296,20 +315,22 @@ pub fn protocol_data_section(ui: &mut Ui, protocol_data: &Option<ProtocolData>) 
             let protocol_data = protocol_data;
             match protocol_data {
                 ProtocolData::Ospf(data) => ospf_protocol_data_section(ui, data),
-                _ => ()
+                _ => (),
             }
         });
     }
-    
 }
 
 fn ospf_protocol_data_section(ui: &mut Ui, data: &OspfData) {
     collapsible_section(ui, "OSPF", false, |ui| {
-        ui.label(format!("Area ID: {}", data.area_id));
-        ui.label(format!("Advertising Router ID: {}", data.advertising_router));
-        ui.label(format!("Link State ID: {}", data.link_state_id));
+        ui.add(label_no_wrap(format!("Area ID: {}", data.area_id)));
+        ui.add(label_no_wrap(format!(
+            "Advertising Router ID: {}",
+            data.advertising_router
+        )));
+        ui.add(label_no_wrap(format!("Link State ID: {}", data.link_state_id)));
         if let Some(sum) = data.checksum {
-            ui.label(format!("LSA checksum: {:x}", sum));
+            ui.add(label_no_wrap(format!("LSA checksum: {:x}", sum)));
         }
         ospf_payload_section(ui, &data.payload);
     });
@@ -323,19 +344,20 @@ fn ospf_payload_section(ui: &mut Ui, payload: &OspfPayload) {
                 let counts = [
                     format!("Point to Point: {}", router.p2p_link_count),
                     format!("Transit: {}", router.transit_link_count),
-                    format!("Stub: {}", router.stub_link_count)
+                    format!("Stub: {}", router.stub_link_count),
                 ];
                 bullet_list(ui, counts);
             });
             collapsible_section(ui, "Link Metrics", false, |ui| {
-                let metrics: Vec<String> = router.link_metrics.iter()
+                let metrics: Vec<String> = router
+                    .link_metrics
+                    .iter()
                     .map(|(addr, metric)| format!("{} : {}", addr, metric))
                     .collect();
                 bullet_list(ui, metrics);
             });
-            
         }
-        _ => ()
+        _ => (),
     }
 }
 
@@ -356,6 +378,10 @@ pub fn collapsible_section(
             add_contents(ui);
         });
     });
+}
+
+pub fn label_no_wrap(text: impl Into<egui::WidgetText>) -> Label {
+    Label::new(text).wrap_mode(egui::TextWrapMode::Extend)
 }
 
 /// Tiny helper to render a bullet point list.
