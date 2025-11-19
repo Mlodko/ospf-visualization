@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Instant};
 
-use crate::gui::node_panel::{FloatingNodePanel, bullet_list, collapsible_section};
+use crate::gui::node_panel::{FloatingNodePanel, bullet_list, collapsible_section, protocol_data_section};
 use crate::network::node::{NodeInfo, ProtocolData};
 use crate::topology::source::SnapshotSource;
 use crate::topology::store::TopologyStore;
@@ -241,21 +241,16 @@ impl App {
                         match node_info {
                             NodeInfo::Router(router) => {
                                 ui.label(format!("Router ID: {}", router.id));
-                                if let Some(ProtocolData::Ospf(data)) = &router.protocol_data {
-                                    ui.label(format!("Area ID: {}", data.area_id));
-                                }
-                                ui.label("Rest not implemented yet");
+                                protocol_data_section(ui, &router.protocol_data);
                             }
                             NodeInfo::Network(net) => {
                                 ui.label(format!("Network prefix: {}", net.ip_address));
                                 ui.label(format!("Network mask: {}", net.ip_address.mask()));
-                                if let Some(ProtocolData::Ospf(data)) = &net.protocol_data {
-                                    ui.label(format!("Area ID: {}", data.area_id));
-                                }
                                 ui.separator();
                                 collapsible_section(ui, "Attached router IDs", true, |ui| {
                                     bullet_list(ui, net.attached_routers.iter());
                                 });
+                                protocol_data_section(ui, &net.protocol_data);
                             }
                         }
                     };

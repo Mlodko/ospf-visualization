@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::{collections::HashMap, net::Ipv4Addr};
 
 use crate::network::router::{Router, RouterId};
 use ipnetwork::IpNetwork;
@@ -67,10 +67,60 @@ pub struct Network {
 }
 
 #[derive(Debug, Clone)]
+pub enum OspfPayload {
+    Router(OspfRouterPayload),
+    Network(OspfNetworkPayload),
+    SummaryNetwork(OspfSummaryNetPayload)
+}
+
+#[derive(Debug, Clone)]
+pub struct OspfRouterPayload {
+    pub is_abr: bool,
+    pub is_asbr: bool,
+    pub is_virtual_link_endpoint: bool,
+    pub is_nssa_capable: bool,
+    pub p2p_link_count: usize,
+    pub transit_link_count: usize,
+    pub stub_link_count: usize,
+    pub link_metrics: HashMap<Ipv4Addr, u16>,
+}
+
+impl OspfRouterPayload {
+    pub fn to_str_tags(&self) -> Vec<String> {
+        let mut tags = Vec::new();
+        if self.is_abr {
+            tags.push("ABR".to_string());
+        }
+        if self.is_asbr {
+            tags.push("ASBR".to_string());
+        }
+        if self.is_nssa_capable {
+            tags.push("NSSA capable".to_string());
+        }
+        tags
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OspfNetworkPayload {
+    pub designated_router_id: Option<RouterId>
+}
+
+#[derive(Debug, Clone)]
+pub struct OspfSummaryNetPayload {
+    pub metric: u32,
+    pub origin_abr: RouterId
+}
+
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct OspfData {
     pub area_id: Ipv4Addr,
     pub advertisement: std::sync::Arc<OspfLinkStateAdvertisement>,
+    pub link_state_id: Ipv4Addr,
+    pub advertising_router: Ipv4Addr,
+    pub checksum: Option<u16>,
+    pub payload: OspfPayload,
 }
 
 #[derive(Debug, Clone)]

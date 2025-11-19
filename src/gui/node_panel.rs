@@ -1,6 +1,9 @@
 use egui::{
     self, CollapsingHeader, Context, Frame, Id, InnerResponse, Order, Pos2, Response, Ui, Vec2,
 };
+use ospf_parser::{OspfLinkStateAdvertisement, OspfRouterLinksAdvertisement};
+
+use crate::network::node::{OspfData, OspfPayload, OspfRouterPayload, ProtocolData};
 
 /// A reusable floating panel anchored near a node on the canvas.
 /// Designed to replace simple text labels with a fully interactive panel.
@@ -284,6 +287,55 @@ impl FloatingNodePanel {
             label_changed: label_changed_flag,
             area_response: area.response,
         }
+    }
+}
+
+pub fn protocol_data_section(ui: &mut Ui, protocol_data: &Option<ProtocolData>) {
+    if let Some(protocol_data) = protocol_data {
+        collapsible_section(ui, "Routing Protocol Data", false, |ui| {
+            let protocol_data = protocol_data;
+            match protocol_data {
+                ProtocolData::Ospf(data) => ospf_protocol_data_section(ui, data),
+                _ => ()
+            }
+        });
+    }
+    
+}
+
+fn ospf_protocol_data_section(ui: &mut Ui, data: &OspfData) {
+    collapsible_section(ui, "OSPF", false, |ui| {
+        ui.label(format!("Area ID: {}", data.area_id));
+        ui.label(format!("Advertising Router ID: {}", data.advertising_router));
+        ui.label(format!("Link State ID: {}", data.link_state_id));
+        if let Some(sum) = data.checksum {
+            ui.label(format!("LSA checksum: {:x}", sum));
+        }
+        ospf_payload_section(ui, &data.payload);
+    });
+}
+fn ospf_payload_section(ui: &mut Ui, payload: &OspfPayload) {
+    match payload {
+        OspfPayload::Router(router) => {
+            let tags = router.to_str_tags().join(", ");
+            ui.label(format!("Tags: {}", tags));
+            collapsible_section(ui, "Link Counts", false, |ui| {
+                let counts = [
+                    format!("Point to Point: {}", router.p2p_link_count),
+                    format!("Transit: {}", router.transit_link_count),
+                    format!("Stub: {}", router.stub_link_count)
+                ];
+                bullet_list(ui, counts);
+            });
+            collapsible_section(ui, "Link Metrics", false, |ui| {
+                let metrics: Vec<String> = router.link_metrics.iter()
+                    .map(|(addr, metric)| format!("{} : {}", addr, metric))
+                    .collect();
+                bullet_list(ui, metrics);
+            });
+            
+        }
+        _ => ()
     }
 }
 
