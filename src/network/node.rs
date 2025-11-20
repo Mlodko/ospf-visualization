@@ -70,7 +70,7 @@ pub struct Network {
 pub enum OspfPayload {
     Router(OspfRouterPayload),
     Network(OspfNetworkPayload),
-    SummaryNetwork(OspfSummaryNetPayload)
+    SummaryNetwork(OspfSummaryNetPayload),
 }
 
 #[derive(Debug, Clone)]
@@ -103,13 +103,14 @@ impl OspfRouterPayload {
 
 #[derive(Debug, Clone)]
 pub struct OspfNetworkPayload {
-    pub designated_router_id: Option<RouterId>
+    pub designated_router_id: Option<RouterId>,
+    pub summaries: Vec<OspfSummaryNetPayload>,
 }
 
 #[derive(Debug, Clone)]
 pub struct OspfSummaryNetPayload {
     pub metric: u32,
-    pub origin_abr: RouterId
+    pub origin_abr: RouterId,
 }
 
 #[derive(Debug, Clone)]

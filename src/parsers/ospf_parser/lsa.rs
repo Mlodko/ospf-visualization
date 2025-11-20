@@ -115,7 +115,7 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
     const ABR_BIT: u16 = 0b0000_0001_0000_0000;
     const ASBR_BIT: u16 = 0b0000_0010_0000_0000;
     const VIRTUAL_BIT: u16 = 0b0000_0100_0000_0000;
-    
+
     let is_abr = advertisement.flags & ABR_BIT != 0;
     let is_asbr = advertisement.flags & ASBR_BIT != 0;
     let is_virtual_link_endpoint = advertisement.flags & VIRTUAL_BIT != 0;
@@ -132,7 +132,7 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
         stub_link_count,
         link_metrics,
     };
-    
+
     let checksum = Some(advertisement.header.ls_checksum);
 
     let ospf_data: OspfData = OspfData {
@@ -161,8 +161,9 @@ pub fn parse_lsa_type_2_to_network(lsa: &OspfLsdbEntry) -> Result<Network, LsaEr
             return Err(LsaError::InvalidLsaType);
         };
     dbg!(advertisement);
+    let network_addr = Ipv4Addr::from_bits(lsa.link_state_id.to_bits() & advertisement.network_mask);
     let network = IpNetwork::with_netmask(
-        IpAddr::V4(lsa.link_state_id),
+        IpAddr::V4(network_addr),
         IpAddr::V4(advertisement.network_mask()),
     )
     .map_err(|_| LsaError::InvalidNetworkMask(advertisement.network_mask()))?;
@@ -176,6 +177,7 @@ pub fn parse_lsa_type_2_to_network(lsa: &OspfLsdbEntry) -> Result<Network, LsaEr
         payload: crate::network::node::OspfPayload::Network(
             crate::network::node::OspfNetworkPayload {
                 designated_router_id: Some(RouterId::Ipv4(lsa.link_state_id)),
+                summaries: Vec::new(),
             },
         ),
     });
@@ -210,10 +212,14 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
         link_state_id: lsa.link_state_id,
         advertising_router: lsa.router_id,
         checksum: Some(adv.header.ls_checksum),
-        payload: crate::network::node::OspfPayload::SummaryNetwork(
-            crate::network::node::OspfSummaryNetPayload {
-                metric: adv.metric as u32,
-                origin_abr: RouterId::Ipv4(lsa.router_id),
+        // Represent Type-3 summary network as a Network payload with a single summary entry collected.
+        payload: crate::network::node::OspfPayload::Network(
+            crate::network::node::OspfNetworkPayload {
+                designated_router_id: None,
+                summaries: vec![crate::network::node::OspfSummaryNetPayload {
+                    metric: adv.metric as u32,
+                    origin_abr: RouterId::Ipv4(lsa.router_id),
+                }],
             },
         ),
     });

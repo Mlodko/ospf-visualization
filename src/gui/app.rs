@@ -1,6 +1,8 @@
 use std::{sync::Arc, time::Instant};
 
-use crate::gui::node_panel::{FloatingNodePanel, bullet_list, collapsible_section, protocol_data_section};
+use crate::gui::node_panel::{
+    FloatingNodePanel, bullet_list, collapsible_section, protocol_data_section,
+};
 use crate::network::node::{NodeInfo, ProtocolData};
 use crate::topology::source::SnapshotSource;
 use crate::topology::store::TopologyStore;
@@ -76,6 +78,12 @@ struct App {
     selected_node: Option<NodeIndex>,
     runtime: Arc<Runtime>,
     layout_state: LayoutState,
+
+    // SNMP source switching state
+    snmp_host: String,
+    snmp_port: u16,
+    snmp_community: String,
+    clear_sources_on_switch: bool,
 }
 
 impl App {
@@ -110,6 +118,11 @@ impl App {
             selected_node: Option::default(),
             runtime,
             layout_state,
+
+            snmp_host: "127.0.0.1".to_string(),
+            snmp_port: 1161,
+            snmp_community: "public".to_string(),
+            clear_sources_on_switch: true,
         })
     }
 
@@ -150,6 +163,39 @@ impl App {
                 let rt = self.runtime.clone();
                 rt.block_on(self.refresh_from_source());
             }
+            ui.add(Separator::default());
+
+            // SNMP connection management
+            CollapsingHeader::new("SNMP Connection")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Host");
+                        ui.text_edit_singleline(&mut self.snmp_host);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Port");
+                        let mut port_val = self.snmp_port as i32;
+                        if ui
+                            .add(egui::DragValue::new(&mut port_val).range(1..=65535))
+                            .changed()
+                        {
+                            self.snmp_port = port_val as u16;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Community");
+                        ui.text_edit_singleline(&mut self.snmp_community);
+                    });
+                    ui.checkbox(
+                        &mut self.clear_sources_on_switch,
+                        "Clear previous sources on connect",
+                    );
+                    if ui.button("Connect").clicked() {
+                        let rt = self.runtime.clone();
+                        rt.block_on(self.switch_snmp_target());
+                    }
+                });
             ui.add(Separator::default());
 
             // Forces section
@@ -273,9 +319,44 @@ impl App {
         });
     }
 
+    // Switch SNMP source target and refresh graph.
+    async fn switch_snmp_target(&mut self) {
+        // Resolve host (IP or DNS)
+        let addr = if let Ok(ip) = self.snmp_host.parse::<std::net::IpAddr>() {
+            std::net::SocketAddr::new(ip, self.snmp_port)
+        } else {
+            match tokio::net::lookup_host((self.snmp_host.as_str(), self.snmp_port)).await {
+                Ok(mut addrs) => addrs.next().unwrap_or_else(|| {
+                    eprintln!("DNS lookup returned no addresses for {}", self.snmp_host);
+                    return std::net::SocketAddr::new(
+                        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                        self.snmp_port,
+                    );
+                }),
+                Err(e) => {
+                    eprintln!(
+                        "DNS lookup failed for {}:{} - {}",
+                        self.snmp_host, self.snmp_port, e
+                    );
+                    return;
+                }
+            }
+        };
+        let client = crate::data_aquisition::snmp::SnmpClient::new(
+            addr,
+            &self.snmp_community,
+            snmp2::Version::V2C,
+            None,
+        );
+        self.topo = Box::new(OspfSnmpTopology::new(client));
+        if self.clear_sources_on_switch {
+            self.store = TopologyStore::default();
+        }
+        self.refresh_from_source().await;
+    }
+
     // Replace the partition for the currently polled source and rebuild the graph from the union.
     async fn refresh_from_source(&mut self) {
-        // label_input removed: no clearing necessary
         self.selected_node = None;
 
         let now = std::time::Instant::now();
