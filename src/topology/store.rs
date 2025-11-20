@@ -17,6 +17,22 @@ impl Partition {
         }
         Partition { nodes: map }
     }
+    
+    pub fn to_string_summary(&self) -> String {
+        let mut summary = String::new();
+        for node in self.nodes.values() {
+            let node_summary = match &node.info {
+                crate::network::node::NodeInfo::Network(net) => {
+                    format!("Network: {}", net.ip_address)
+                },
+                crate::network::node::NodeInfo::Router(router) => {
+                    format!("Router: {}", router.id)
+                }
+            };
+            summary += &format!("{}\n", node_summary);
+        }
+        summary
+    } 
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,6 +108,14 @@ impl TopologyStore {
                 },
             );
         }
+    }
+    pub fn to_summary_string(&self) -> String {
+        let mut summary = String::new();
+        for (src_id, src_state) in &self.sources {
+            let part_sum = src_state.partition.to_string_summary();
+            summary += &format!("{}:\n{}", src_id, part_sum);
+        }
+        summary
     }
 
     // Build merged view, dedupe by Node.id with explicit selection policy:

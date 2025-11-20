@@ -228,6 +228,9 @@ impl App {
             });
 
             ui.separator();
+            if ui.button("Print store data").clicked() {
+                println!("{}", self.store.to_summary_string());
+            }
             ui.collapsing("egui debug", |ui| {
                 // Clone, edit via built-in UI, then apply:
                 let mut style = (*ctx.style()).clone();
@@ -328,10 +331,10 @@ impl App {
             match tokio::net::lookup_host((self.snmp_host.as_str(), self.snmp_port)).await {
                 Ok(mut addrs) => addrs.next().unwrap_or_else(|| {
                     eprintln!("DNS lookup returned no addresses for {}", self.snmp_host);
-                    return std::net::SocketAddr::new(
+                    std::net::SocketAddr::new(
                         std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
                         self.snmp_port,
-                    );
+                    )
                 }),
                 Err(e) => {
                     eprintln!(

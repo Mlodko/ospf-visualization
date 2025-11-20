@@ -269,23 +269,22 @@ impl<S: OspfDataSource + Send + Sync> TopologySource for OspfTopology<S> {
         let mut attach_existing: Vec<(IpNetwork, RouterId)> = Vec::new();
 
         for (rid, _router, adv_opt) in &router_lsa_snapshots {
-            if let Some(adv_arc) = adv_opt {
-                if let ospf_parser::OspfLinkStateAdvertisement::RouterLinks(router_links) =
-                    &**adv_arc
-                {
-                    for link in &router_links.links {
-                        if matches!(link.link_type, ospf_parser::OspfRouterLinkType::Stub) {
-                            let net_addr_v4 = link.link_id();
-                            let mask_v4 = link.link_data();
-                            if let Ok(stub_prefix) = IpNetwork::with_netmask(
-                                std::net::IpAddr::V4(net_addr_v4),
-                                std::net::IpAddr::V4(mask_v4),
-                            ) {
-                                if !existing_prefixes.contains(&stub_prefix) {
-                                    new_stub_prefixes.push((stub_prefix, (*rid).clone()));
-                                } else {
-                                    attach_existing.push((stub_prefix, (*rid).clone()));
-                                }
+            let Some(adv_arc) = adv_opt else { continue };
+            if let ospf_parser::OspfLinkStateAdvertisement::RouterLinks(router_links) =
+                &**adv_arc
+            {
+                for link in &router_links.links {
+                    if matches!(link.link_type, ospf_parser::OspfRouterLinkType::Stub) {
+                        let net_addr_v4 = link.link_id();
+                        let mask_v4 = link.link_data();
+                        if let Ok(stub_prefix) = IpNetwork::with_netmask(
+                            std::net::IpAddr::V4(net_addr_v4),
+                            std::net::IpAddr::V4(mask_v4),
+                        ) {
+                            if !existing_prefixes.contains(&stub_prefix) {
+                                new_stub_prefixes.push((stub_prefix, (*rid).clone()));
+                            } else {
+                                attach_existing.push((stub_prefix, (*rid).clone()));
                             }
                         }
                     }
@@ -313,19 +312,18 @@ impl<S: OspfDataSource + Send + Sync> TopologySource for OspfTopology<S> {
         // Attach routers to existing stub networks if missing
         for (stub_prefix, rid) in attach_existing {
             for n in consolidated.iter_mut() {
-                if let NodeInfo::Network(net) = &mut n.info {
-                    if net.ip_address == stub_prefix
-                        && !net
-                            .attached_routers
-                            .iter()
-                            .any(|r_existing| r_existing == &rid)
-                    {
-                        net.attached_routers.push(rid.clone());
-                        println!(
-                            "[OSPF consolidate][synthetic-stub] attach router={} to existing stub prefix={}",
-                            rid, stub_prefix
-                        );
-                    }
+                let NodeInfo::Network(net) = &mut n.info else { continue };
+                if net.ip_address == stub_prefix
+                    && !net
+                        .attached_routers
+                        .iter()
+                        .any(|r_existing| r_existing == &rid)
+                {
+                    net.attached_routers.push(rid.clone());
+                    println!(
+                        "[OSPF consolidate][synthetic-stub] attach router={} to existing stub prefix={}",
+                        rid, stub_prefix
+                    );
                 }
             }
         }
