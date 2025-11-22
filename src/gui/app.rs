@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Instant};
 use crate::gui::node_panel::{
     FloatingNodePanel, bullet_list, collapsible_section, protocol_data_section,
 };
-use crate::network::node::{NodeInfo, ProtocolData};
+use crate::network::node::{Network, NodeInfo, ProtocolData};
 use crate::topology::source::SnapshotSource;
 use crate::topology::store::TopologyStore;
 use crate::{
@@ -105,7 +105,7 @@ impl App {
             .map_err(|e| RuntimeError::TopologyFetchError(e.to_string()))?;
         store.replace_partition(src, nodes, now);
 
-        let merged: Vec<Node> = store.union_nodes(true);
+        let merged: Vec<Node> = store.build_merged_view(true);
         let graph = NetworkGraph::build_new(merged);
         let layout_state = LayoutState::default();
 
@@ -144,7 +144,8 @@ impl App {
                 )
                 .changed()
             {
-                let merged = self.store.union_nodes(self.live_view_only);
+                println!("[app] Live view changed to: {}", self.live_view_only);
+                let merged = self.store.build_merged_view(self.live_view_only);
                 self.graph = NetworkGraph::build_new(merged);
             }
 
@@ -154,12 +155,14 @@ impl App {
                 .on_hover_text("Toggle partition-wide highlight on hover")
                 .changed()
             {
+                println!("[app] Partition highlight changed to: {}", highlight_enabled);
                 set_partition_highlight_enabled(highlight_enabled);
             }
             ui.separator();
             ui.label("Change node label");
             ui.label("Select a node; its label can be edited in the floating panel.");
             if ui.button("Poll source and rebuild graph").clicked() {
+                println!("[app] Polling source and rebuilding graph");
                 let rt = self.runtime.clone();
                 rt.block_on(self.refresh_from_source());
             }
@@ -193,6 +196,19 @@ impl App {
                     );
                     if ui.button("Connect").clicked() {
                         let rt = self.runtime.clone();
+                        println!("[app] Pressed connect button");
+                        println!(
+"[app] Connecting to new SNMP target {{
+\tIP: {}:{}
+\tCommunity: {}
+\tClear sources: {}
+\tLive view: {}
+}}",
+                            self.snmp_host, self.snmp_port,
+                            self.snmp_community,
+                            self.clear_sources_on_switch,
+                            self.live_view_only
+                        );
                         rt.block_on(self.switch_snmp_target());
                     }
                 });
@@ -229,7 +245,17 @@ impl App {
 
             ui.separator();
             if ui.button("Print store data").clicked() {
-                println!("{}", self.store.to_summary_string());
+                println!("[app] Pressed print store data button");
+                println!("{}", self.store.to_string());
+            }
+            if ui.button("Print graph data").clicked() {
+                println!("[app] Pressed print graph data button");
+                println!("{}", self.graph.to_string())
+            }
+            if ui.button("Try build graph from store and print").clicked() {
+                let graph = NetworkGraph::build_new(self.store.build_merged_view(false));
+                println!("[app] Pressed try build graph from store and print button");
+                println!("Fresh {}", graph.to_string())
             }
             ui.collapsing("egui debug", |ui| {
                 // Clone, edit via built-in UI, then apply:
@@ -287,6 +313,7 @@ impl App {
                         .expect("Could not find selected node");
                     let render_node_label = |ui: &mut Ui, _ctx: &Context| {
                         let node_info = &selected_node.props().payload.info;
+                        ui.label(format!("Node ID: {}", selected_node.payload().id));
                         match node_info {
                             NodeInfo::Router(router) => {
                                 ui.label(format!("Router ID: {}", router.id));
@@ -355,6 +382,7 @@ impl App {
         if self.clear_sources_on_switch {
             self.store = TopologyStore::default();
         }
+        println!("[app] Switched SNMP source to {}:{}", self.snmp_host, self.snmp_port);
         self.refresh_from_source().await;
     }
 
@@ -370,12 +398,12 @@ impl App {
             Ok(src) => match self.topo.fetch_nodes().await {
                 Ok(nodes) => {
                     self.store.replace_partition(src, nodes, now);
-                    let merged = self.store.union_nodes(self.live_view_only);
+                    let merged = self.store.build_merged_view(self.live_view_only);
                     self.graph.reconcile(merged);
                 }
                 Err(e) => {
                     self.store.mark_lost(&src, now);
-                    let merged = self.store.union_nodes(self.live_view_only);
+                    let merged = self.store.build_merged_view(self.live_view_only);
                     self.graph.reconcile(merged);
                     eprintln!("Failed to fetch topology nodes: {:?}", e);
                 }

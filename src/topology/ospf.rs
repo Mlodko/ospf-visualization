@@ -52,6 +52,19 @@ impl<S: OspfDataSource + Send + Sync> TopologySource for OspfTopology<S> {
         }
 
         // Consolidation: merge summary (Type-3) networks into detailed (Type-2) networks.
+        //
+        // Intent:
+        // 1. Keep the Type-3 summary network node (with its ABR attachment) only until a Type-2
+        //    Network-LSA for the same prefix is present.
+        // 2. When a detailed (Type-2) network appears, fold the summary metrics into the detailed
+        //    node and retain router attachments from the detailed LSA. The summary node itself
+        //    is NOT preserved separately.
+        // 3. The originating ABR stays logically "connected" because its Router-LSA already
+        //    enumerates the transit segment; summary attachment is just a temporary placeholder.
+        // 4. We do not drop the ABR attachment pre-emptively; replacement happens only if a
+        //    detailed node exists for the same prefix.
+        //
+        // Result: summary nodes always connect to the ABR until superseded by a detailed network.
         use std::collections::HashSet;
         let mut routers: Vec<Node> = Vec::new();
         let mut by_prefix: HashMap<IpNetwork, Node> = HashMap::new();
@@ -204,22 +217,23 @@ impl<S: OspfDataSource + Send + Sync> TopologySource for OspfTopology<S> {
         let mut consolidated: Vec<Node> = routers;
         consolidated.extend(by_prefix.into_values());
 
-        // Augmentation replaced: use OSPF semantics.
-        // - Do NOT add routers to detailed Network-LSAs (they already enumerate membership).
-        // - Do NOT add routers to summary networks (inter-area reachability only).
-        // - Perform stub network synthesis: create synthetic network nodes for stub links
-        //   without an existing Network-LSA, attaching only the advertising router.
+        // Augmentation phase (post per-source consolidation) using OSPF semantics:
         //
-        // Stub logic:
-        // For each Router-LSA:
-        //   For each stub link (link_type == Stub):
-        //     link_id => network address, link_data => mask
-        //     Construct IpNetwork(prefix). If not present among consolidated networks,
-        //     create synthetic network node.
+        // - Detailed Network-LSAs: authoritative membership; we do not inject extra router
+        //   attachments beyond what the LSA lists.
+        // - Summary (Type-3) networks: kept attached to the originating ABR so the graph
+        //   shows inter-area reachability. This attachment is temporary; if a detailed
+        //   Network-LSA for the same prefix appears, the summary metrics are folded into
+        //   that detailed node and the separate summary node is eliminated.
+        // - Stub synthesis: create synthetic network nodes for Router-LSA stub links
+        //   not represented by any existing Network-LSA, and attach only the advertising router.
+        //   This prevents orphan routers while remaining faithful to OSPF semantics.
+        // - Transit / P2P augmentation: skipped; Network-LSA coverage for multi-access
+        //   segments is authoritative.
         //
-        // Transit / P2P augmentation is skipped because Network-LSA coverage is authoritative.
-        //
-        // Detailed logging retained for synthesis.
+        // Logging notes:
+        //   [OSPF consolidate][synthetic-stub] ... for stub creations or extra attachments
+        //   [OSPF consolidate] merge prefix=... for summary→detailed folding.
 
         use ipnetwork::IpNetwork;
 
@@ -270,9 +284,7 @@ impl<S: OspfDataSource + Send + Sync> TopologySource for OspfTopology<S> {
 
         for (rid, _router, adv_opt) in &router_lsa_snapshots {
             let Some(adv_arc) = adv_opt else { continue };
-            if let ospf_parser::OspfLinkStateAdvertisement::RouterLinks(router_links) =
-                &**adv_arc
-            {
+            if let ospf_parser::OspfLinkStateAdvertisement::RouterLinks(router_links) = &**adv_arc {
                 for link in &router_links.links {
                     if matches!(link.link_type, ospf_parser::OspfRouterLinkType::Stub) {
                         let net_addr_v4 = link.link_id();
@@ -312,7 +324,9 @@ impl<S: OspfDataSource + Send + Sync> TopologySource for OspfTopology<S> {
         // Attach routers to existing stub networks if missing
         for (stub_prefix, rid) in attach_existing {
             for n in consolidated.iter_mut() {
-                let NodeInfo::Network(net) = &mut n.info else { continue };
+                let NodeInfo::Network(net) = &mut n.info else {
+                    continue;
+                };
                 if net.ip_address == stub_prefix
                     && !net
                         .attached_routers
@@ -337,7 +351,8 @@ impl<S: OspfDataSource + Send + Sync> TopologySource for OspfTopology<S> {
             println!("[OSPF consolidate][synthetic] no stub networks generated");
         }
 
-        // Removed obsolete pseudo /32 synthetic generation block (stub synthesis now handled earlier with proper Router-LSA semantics).
+        // Note: pseudo /32 synthetic generation removed (stub synthesis now handles missing prefixes).
+        // Summary → detailed replacement occurs only when a Type-2 LSA supplies authoritative membership.
 
         println!(
             "[OSPF consolidate] final counts: routers={} networks={}",
@@ -365,10 +380,12 @@ impl<S: OspfDataSource + Send + Sync> TopologySource for OspfTopology<S> {
             "[OSPF consolidate] aggregate attached router refs across networks={}",
             total_attached
         );
-        
+
         for node in consolidated.iter() {
             if let NodeInfo::Network(net) = &node.info {
-                let router_ips: Vec<String> = net.attached_routers.iter()
+                let router_ips: Vec<String> = net
+                    .attached_routers
+                    .iter()
                     .map(|r| {
                         if let RouterId::Ipv4(addr) = r {
                             Some(addr.to_string())
@@ -401,5 +418,112 @@ fn map_ospf_source_err(err: OspfSourceError) -> TopologyError {
     match err {
         OspfSourceError::Acquisition(s) => TopologyError::Acquisition(s),
         OspfSourceError::Invalid(s) => TopologyError::Protocol(s),
+    }
+}
+
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn debug_topology_merge() {
+        use crate::data_aquisition::snmp::SnmpClient;
+        use crate::topology::source::SnapshotSource;
+        use crate::topology::store::TopologyStore;
+        use snmp2::Version;
+
+        let addr1: std::net::SocketAddr = "127.0.0.1:1161".parse().unwrap();
+        let addr2: std::net::SocketAddr = "127.0.0.1:1166".parse().unwrap();
+
+        let client1 = SnmpClient::new(addr1, "public", Version::V2C, None);
+        let client2 = SnmpClient::new(addr2, "public", Version::V2C, None);
+
+        let mut topo1 = super::OspfSnmpTopology::new(client1);
+        let mut topo2 = super::OspfSnmpTopology::new(client2);
+
+        let mut store = TopologyStore::default();
+
+        // Source 1
+        let now = std::time::Instant::now();
+        match topo1.fetch_snapshot().await {
+            Ok((src, nodes)) => {
+                println!(
+                    "[debug_topology_merge] source1={} nodes={}",
+                    src,
+                    nodes.len()
+                );
+                store.replace_partition(src, nodes, now);
+            }
+            Err(e) => {
+                eprintln!("[debug_topology_merge] source1 fetch failed: {:?}", e);
+            }
+        }
+
+        // Source 2
+        let now = std::time::Instant::now();
+        match topo2.fetch_snapshot().await {
+            Ok((src, nodes)) => {
+                println!(
+                    "[debug_topology_merge] source2={} nodes={}",
+                    src,
+                    nodes.len()
+                );
+                store.replace_partition(src, nodes, now);
+            }
+            Err(e) => {
+                eprintln!("[debug_topology_merge] source2 fetch failed: {:?}", e);
+            }
+        }
+
+        println!(
+            "[debug_topology_merge] store summary:\n{}",
+            store.to_string()
+        );
+
+        // Build merged views
+        let merged_connected = store.build_merged_view(true);
+        let merged_all = store.build_merged_view(false);
+
+        let routers_connected = merged_connected
+            .iter()
+            .filter(|n| matches!(n.info, crate::network::node::NodeInfo::Router(_)))
+            .count();
+        let networks_connected = merged_connected
+            .iter()
+            .filter(|n| matches!(n.info, crate::network::node::NodeInfo::Network(_)))
+            .count();
+        println!(
+            "[debug_topology_merge] merged (connected_only=true): routers={} networks={}",
+            routers_connected, networks_connected
+        );
+
+        for node in &merged_connected {
+            match &node.info {
+                crate::network::node::NodeInfo::Router(r) => {
+                    println!("Router {}", r.id);
+                }
+                crate::network::node::NodeInfo::Network(net) => {
+                    let attached = net
+                        .attached_routers
+                        .iter()
+                        .map(|r| r.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    println!("Network {} -> [{}]", net.ip_address, attached);
+                }
+            }
+        }
+
+        let routers_all = merged_all
+            .iter()
+            .filter(|n| matches!(n.info, crate::network::node::NodeInfo::Router(_)))
+            .count();
+        let networks_all = merged_all
+            .iter()
+            .filter(|n| matches!(n.info, crate::network::node::NodeInfo::Network(_)))
+            .count();
+        println!(
+            "[debug_topology_merge] merged (connected_only=false): routers={} networks={}",
+            routers_all, networks_all
+        );
     }
 }

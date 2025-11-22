@@ -29,24 +29,20 @@ impl RouterId {
     pub fn to_uuidv5(&self) -> Uuid {
         Uuid::new_v5(&Uuid::NAMESPACE_OID, &self.as_bytes())
     }
+    
+    pub fn as_string(&self) -> String {
+        match self {
+            Self::Ipv4(ip) => ip.to_string(),
+            Self::Ipv6(ip) => ip.to_string(),
+            Self::IsIs(id) => format!("{:?}", id),
+            Self::Other(string) => string.clone(),
+        }
+    }
 }
 
 impl Display for RouterId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RouterId::Ipv4(addr) => write!(f, "IPv4: {}", addr),
-            RouterId::Ipv6(addr) => write!(f, "IPv6: {}", addr),
-            RouterId::IsIs(id) => write!(
-                f,
-                "IS-IS: {:?} ({})",
-                id,
-                id.iter()
-                    .map(|b| format!("{:02X}", b))
-                    .collect::<Vec<_>>()
-                    .join(":")
-            ),
-            RouterId::Other(string) => write!(f, "Other: {}", string),
-        }
+        write!(f, "{}", self.as_string())
     }
 }
 

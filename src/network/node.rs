@@ -83,6 +83,22 @@ pub struct OspfRouterPayload {
     pub transit_link_count: usize,
     pub stub_link_count: usize,
     pub link_metrics: HashMap<Ipv4Addr, u16>,
+    pub per_area_facets: Vec<PerAreaRouterFacet>,
+    pub virtual_links: Vec<OspfVirtualLink>,
+}
+
+#[derive(Debug, Clone)]
+pub struct OspfVirtualLink {
+    pub peer_router_id: crate::network::router::RouterId,
+    pub transit_area_id: std::net::Ipv4Addr,
+}
+
+#[derive(Debug, Clone)]
+pub struct PerAreaRouterFacet {
+    pub area_id: Ipv4Addr,
+    pub p2p_link_count: usize,
+    pub transit_link_count: usize,
+    pub stub_link_count: usize
 }
 
 impl OspfRouterPayload {
@@ -105,6 +121,15 @@ impl OspfRouterPayload {
 pub struct OspfNetworkPayload {
     pub designated_router_id: Option<RouterId>,
     pub summaries: Vec<OspfSummaryNetPayload>,
+    pub externals: Vec<OspfExternalNetPayload>,
+}
+
+#[derive(Debug, Clone)]
+pub struct OspfExternalNetPayload {
+    pub origin_asbr: RouterId,
+    pub metric: u32,
+    pub route_tag: Option<u32>,
+    pub forwarding_address: Option<Ipv4Addr>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +147,14 @@ pub struct OspfData {
     pub advertising_router: Ipv4Addr,
     pub checksum: Option<u16>,
     pub payload: OspfPayload,
+}
+
+#[derive(Debug, Clone)]
+pub struct OspfRouterData {
+    pub is_abr: bool,
+    pub is_asbr: bool,
+    pub is_nssa_capable: bool,
+    
 }
 
 #[derive(Debug, Clone)]

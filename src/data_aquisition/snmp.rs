@@ -23,7 +23,7 @@ pub struct SnmpClient {
 impl Default for SnmpClient {
     fn default() -> Self {
         Self::new(
-            SocketAddr::from_str("127.0.0.1:1166").unwrap(),
+            SocketAddr::from_str("127.0.0.1:1161").unwrap(),
             "public",
             Version::V2C,
             None,

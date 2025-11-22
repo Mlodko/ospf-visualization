@@ -1,5 +1,7 @@
 use crate::{
-    network::node::{Node, NodeInfo, OspfData, OspfRouterPayload, ProtocolData},
+    network::node::{
+        Node, NodeInfo, OspfData, OspfRouterPayload, PerAreaRouterFacet, ProtocolData,
+    },
     parsers::ospf_parser::source::OspfRawRow,
 };
 use ipnetwork::IpNetwork;
@@ -131,6 +133,13 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
         transit_link_count,
         stub_link_count,
         link_metrics,
+        per_area_facets: vec![PerAreaRouterFacet {
+            area_id: lsa.area_id,
+            p2p_link_count,
+            transit_link_count,
+            stub_link_count,
+        }],
+        virtual_links: vec![],
     };
 
     let checksum = Some(advertisement.header.ls_checksum);
@@ -160,8 +169,8 @@ pub fn parse_lsa_type_2_to_network(lsa: &OspfLsdbEntry) -> Result<Network, LsaEr
         } else {
             return Err(LsaError::InvalidLsaType);
         };
-    dbg!(advertisement);
-    let network_addr = Ipv4Addr::from_bits(lsa.link_state_id.to_bits() & advertisement.network_mask);
+    let network_addr =
+        Ipv4Addr::from_bits(lsa.link_state_id.to_bits() & advertisement.network_mask);
     let network = IpNetwork::with_netmask(
         IpAddr::V4(network_addr),
         IpAddr::V4(advertisement.network_mask()),
@@ -178,6 +187,7 @@ pub fn parse_lsa_type_2_to_network(lsa: &OspfLsdbEntry) -> Result<Network, LsaEr
             crate::network::node::OspfNetworkPayload {
                 designated_router_id: Some(RouterId::Ipv4(lsa.link_state_id)),
                 summaries: Vec::new(),
+                externals: vec![],
             },
         ),
     });
@@ -220,6 +230,7 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
                     metric: adv.metric as u32,
                     origin_abr: RouterId::Ipv4(lsa.router_id),
                 }],
+                externals: vec![],
             },
         ),
     });
@@ -227,6 +238,8 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
     Ok(Network {
         ip_address: net_addr,
         protocol_data: Some(protocol_data),
+        // Attach the originating ABR so the summary network is connected;
+        // later consolidation will fold this into a detailed Type-2 if present.
         attached_routers: vec![RouterId::Ipv4(lsa.router_id)],
     })
 }
