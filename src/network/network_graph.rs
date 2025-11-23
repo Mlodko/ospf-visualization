@@ -8,7 +8,7 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    gui::{edge_shape::MyEdgeShape, node_shape::MyNodeShape},
+    gui::node_shape::MyNodeShape,
     network::{
         edge::{Edge, EdgeKind, EdgeMetric},
         node::{Node, NodeInfo, OspfPayload, ProtocolData},

@@ -4,6 +4,7 @@ use crate::gui::node_panel::{
     FloatingNodePanel, bullet_list, collapsible_section, protocol_data_section,
 };
 use crate::network::node::{Network, NodeInfo, ProtocolData};
+
 use crate::topology::source::SnapshotSource;
 use crate::topology::store::TopologyStore;
 use crate::{
@@ -94,9 +95,8 @@ impl App {
         let _ = cc; // silence unused variable warning for now
 
         let snmp_client = crate::data_aquisition::snmp::SnmpClient::default();
-        let mut topo: Box<dyn SnapshotSource> = Box::new(
-            crate::topology::ospf_protocol::new_ospf_snmp_topology(snmp_client),
-        );
+        let mut topo: Box<dyn SnapshotSource> =
+            Box::new(OspfSnmpTopology::from_snmp_client(snmp_client));
         let mut store = TopologyStore::default();
 
         // First snapshot: replace partition and build union (live-only)
@@ -384,9 +384,7 @@ impl App {
             snmp2::Version::V2C,
             None,
         );
-        self.topo = Box::new(crate::topology::ospf_protocol::new_ospf_snmp_topology(
-            client,
-        ));
+        self.topo = Box::new(OspfSnmpTopology::from_snmp_client(client));
         if self.clear_sources_on_switch {
             self.store = TopologyStore::default();
         }

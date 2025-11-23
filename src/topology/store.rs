@@ -13,13 +13,13 @@ use crate::network::{
     node::{Node, NodeInfo, OspfNetworkPayload, OspfPayload, PerAreaRouterFacet, ProtocolData},
     router::{Router, RouterId},
 };
+use ipnetwork::IpNetwork;
+use ospf_parser::OspfLinkStateAdvertisement;
 use std::{
     collections::{HashMap, HashSet},
     net::Ipv4Addr,
     time::Instant,
 };
-use ipnetwork::IpNetwork;
-use ospf_parser::OspfLinkStateAdvertisement;
 use uuid::Uuid;
 
 pub type SourceId = RouterId;
@@ -74,7 +74,6 @@ impl SourceState {
 pub struct TopologyStore {
     sources: HashMap<SourceId, SourceState>,
 }
-
 
 /// Represents a router as seen from one source.
 #[derive(Debug, Clone)]
@@ -218,7 +217,7 @@ impl TopologyStore {
             }
         }
     }
-    
+
     /// Mark a source as lost.
     pub fn mark_lost(&mut self, src_id: &SourceId, timestamp: Instant) {
         if let Some(state) = self.sources.get_mut(src_id) {
@@ -239,7 +238,7 @@ impl TopologyStore {
             );
         }
     }
-    
+
     /// Detect duplicate routers in the topology.
     fn detect_router_duplicates(&self, connected_only: bool) -> Vec<DuplicateRouterBucket> {
         let mut buckets = HashMap::new();
@@ -320,7 +319,7 @@ impl TopologyStore {
         }
         out
     }
-    
+
     /// Fuse a duplicate router bucket into a single router node. Rules are:
     /// TODO
     fn fuse_router_bucket(bucket: DuplicateRouterBucket) -> Node {
@@ -478,199 +477,215 @@ impl TopologyStore {
 
         best.into_values().map(|(n, _, _, _)| n).collect()
     }
-    
+
     /// Fuse a group of network nodes into a single node.
     fn fuse_network_group(nodes: Vec<Node>) -> Node {
         use std::collections::HashSet;
-        
-            let mut detailed: Vec<Node> = Vec::new();
-            let mut summary: Vec<Node> = Vec::new();
-        
-            for n in nodes {
-                match classify_network_kind(&n) {
-                    NetKind::Detailed => detailed.push(n),
-                    NetKind::Summary => summary.push(n),
-                    NetKind::Other => {
-                        // Non-OSPF or unexpected advertisement inside a Network node.
-                        // Panic here intentionally per your requirement.
-                        panic!(
-                            "[fuse_network_group] Encountered unsupported network node uuid={} (non-OSPF or unsupported LSA type)",
-                            n.id
-                        );
+
+        let mut detailed: Vec<Node> = Vec::new();
+        let mut summary: Vec<Node> = Vec::new();
+
+        for n in nodes {
+            match classify_network_kind(&n) {
+                NetKind::Detailed => detailed.push(n),
+                NetKind::Summary => summary.push(n),
+                NetKind::Other => {
+                    // Non-OSPF or unexpected advertisement inside a Network node.
+                    // Panic here intentionally per your requirement.
+                    panic!(
+                        "[fuse_network_group] Encountered unsupported network node uuid={} (non-OSPF or unsupported LSA type)",
+                        n.id
+                    );
+                }
+            }
+        }
+
+        // Helper: union attached router IDs
+        let union_attached = |base: &mut Vec<RouterId>, extra: &[RouterId]| {
+            let mut seen: HashSet<Uuid> = base.iter().map(|r| r.to_uuidv5()).collect();
+            for rid in extra {
+                let id = rid.to_uuidv5();
+                if seen.insert(id) {
+                    base.push(rid.clone());
+                }
+            }
+        };
+
+        // Helper: union summary metrics from multiple OSPF network payloads
+        let union_summaries = |base_payload: &mut OspfNetworkPayload,
+                               extras: &[&OspfNetworkPayload]| {
+            let mut seen: HashSet<(u32, Uuid)> = base_payload
+                .summaries
+                .iter()
+                .map(|s| (s.metric, s.origin_abr.to_uuidv5()))
+                .collect();
+            for extra_pd in extras {
+                for s in &extra_pd.summaries {
+                    let sig = (s.metric, s.origin_abr.to_uuidv5());
+                    if seen.insert(sig) {
+                        base_payload.summaries.push(s.clone());
                     }
                 }
             }
-        
-            // Helper: union attached router IDs
-            let union_attached = |base: &mut Vec<RouterId>, extra: &[RouterId]| {
-                let mut seen: HashSet<Uuid> = base.iter().map(|r| r.to_uuidv5()).collect();
-                for rid in extra {
-                    let id = rid.to_uuidv5();
-                    if seen.insert(id) {
-                        base.push(rid.clone());
-                    }
-                }
-            };
-        
-            // Helper: union summary metrics from multiple OSPF network payloads
-            let union_summaries =
-                |base_payload: &mut OspfNetworkPayload, extras: &[&OspfNetworkPayload]| {
-                    let mut seen: HashSet<(u32, Uuid)> = base_payload
-                        .summaries
-                        .iter()
-                        .map(|s| (s.metric, s.origin_abr.to_uuidv5()))
-                        .collect();
-                    for extra_pd in extras {
-                        for s in &extra_pd.summaries {
-                            let sig = (s.metric, s.origin_abr.to_uuidv5());
-                            if seen.insert(sig) {
-                                base_payload.summaries.push(s.clone());
-                            }
-                        }
-                    }
-                };
-        
-            // Case 1: Detailed present → pick one base, fold others + all summaries
-            if let Some(mut base) = detailed.pop() {
-                if let NodeInfo::Network(base_net) = &mut base.info {
-                    // Union attached routers from other detailed nodes
-                    for d in &detailed {
-                        if let NodeInfo::Network(net) = &d.info {
-                            union_attached(&mut base_net.attached_routers, &net.attached_routers);
-                        } else {
-                            panic!("[fuse_network_group] Expected Network node in detailed list");
-                        }
-                    }
-        
-                    // Match explicitly on protocol; panic for unknown protocol variants
-                    match &mut base_net.protocol_data {
-                        Some(ProtocolData::Ospf(base_pd)) => {
-                            if let OspfPayload::Network(base_np) = &mut base_pd.payload {
-                                // Collect summary payload references
-                                let mut summary_payload_refs: Vec<&OspfNetworkPayload> = Vec::new();
-                                for s in &summary {
-                                    if let NodeInfo::Network(net) = &s.info {
-                                        match &net.protocol_data {
-                                            Some(ProtocolData::Ospf(opd)) => {
-                                                if let OspfPayload::Network(np) = &opd.payload {
-                                                    summary_payload_refs.push(np);
-                                                } else {
-                                                    panic!("[fuse_network_group] Network node with OSPF data but non-Network payload");
-                                                }
-                                            }
-                                            Some(ProtocolData::IsIs(_)) => {
-                                                panic!("[fuse_network_group] Encountered IS-IS network payload (unsupported here)");
-                                            }
-                                            Some(ProtocolData::Other(desc)) => {
-                                                panic!(
-                                                    "[fuse_network_group] Encountered unsupported protocol payload: {}",
-                                                    desc
-                                                );
-                                            }
-                                            None => {
-                                                panic!("[fuse_network_group] Missing protocol_data in summary network node");
-                                            }
-                                        }
-                                    } else {
-                                        panic!("[fuse_network_group] Summary list contained non-network node");
-                                    }
-                                }
-                                union_summaries(base_np, &summary_payload_refs);
-                            } else {
-                                panic!(
-                                    "[fuse_network_group] Base detailed network has OSPF protocol but non-Network payload"
-                                );
-                            }
-                        }
-                        Some(ProtocolData::IsIs(_)) => {
-                            panic!("[fuse_network_group] Encountered IS-IS detailed network (unsupported)");
-                        }
-                        Some(ProtocolData::Other(desc)) => {
-                            panic!(
-                                "[fuse_network_group] Encountered unsupported detailed network protocol: {}",
-                                desc
-                            );
-                        }
-                        None => {
-                            panic!("[fuse_network_group] Detailed network missing protocol_data");
-                        }
-                    }
-                } else {
-                    panic!("[fuse_network_group] Detailed vector first element not a Network node");
-                }
-                return base;
-            }
-        
-            // Case 2: Only summaries exist → produce one summary base
-            let mut base = summary
-                .pop()
-                .expect("[fuse_network_group] Called with empty group (no nodes)");
-        
+        };
+
+        // Case 1: Detailed present → pick one base, fold others + all summaries
+        if let Some(mut base) = detailed.pop() {
             if let NodeInfo::Network(base_net) = &mut base.info {
-                // Union ABR attachments from remaining summary nodes
-                for s in &summary {
-                    if let NodeInfo::Network(net) = &s.info {
+                // Union attached routers from other detailed nodes
+                for d in &detailed {
+                    if let NodeInfo::Network(net) = &d.info {
                         union_attached(&mut base_net.attached_routers, &net.attached_routers);
                     } else {
-                        panic!("[fuse_network_group] Summary-only group contained non-network node");
+                        panic!("[fuse_network_group] Expected Network node in detailed list");
                     }
                 }
-        
-                // Merge summary metrics
+
+                // Match explicitly on protocol; panic for unknown protocol variants
                 match &mut base_net.protocol_data {
                     Some(ProtocolData::Ospf(base_pd)) => {
                         if let OspfPayload::Network(base_np) = &mut base_pd.payload {
-                            let mut extra_refs: Vec<&OspfNetworkPayload> = Vec::new();
+                            // Collect summary payload references
+                            let mut summary_payload_refs: Vec<&OspfNetworkPayload> = Vec::new();
                             for s in &summary {
                                 if let NodeInfo::Network(net) = &s.info {
                                     match &net.protocol_data {
                                         Some(ProtocolData::Ospf(opd)) => {
                                             if let OspfPayload::Network(np) = &opd.payload {
-                                                extra_refs.push(np);
+                                                summary_payload_refs.push(np);
                                             } else {
-                                                panic!("[fuse_network_group] Summary node OSPF data but non-Network payload");
+                                                panic!(
+                                                    "[fuse_network_group] Network node with OSPF data but non-Network payload"
+                                                );
                                             }
                                         }
                                         Some(ProtocolData::IsIs(_)) => {
-                                            panic!("[fuse_network_group] Encountered IS-IS summary network (unsupported)");
+                                            panic!(
+                                                "[fuse_network_group] Encountered IS-IS network payload (unsupported here)"
+                                            );
                                         }
                                         Some(ProtocolData::Other(desc)) => {
                                             panic!(
-                                                "[fuse_network_group] Encountered unsupported summary network protocol: {}",
+                                                "[fuse_network_group] Encountered unsupported protocol payload: {}",
                                                 desc
                                             );
                                         }
                                         None => {
-                                            panic!("[fuse_network_group] Missing protocol_data in summary network node");
+                                            panic!(
+                                                "[fuse_network_group] Missing protocol_data in summary network node"
+                                            );
                                         }
                                     }
+                                } else {
+                                    panic!(
+                                        "[fuse_network_group] Summary list contained non-network node"
+                                    );
                                 }
                             }
-                            union_summaries(base_np, &extra_refs);
+                            union_summaries(base_np, &summary_payload_refs);
                         } else {
                             panic!(
-                                "[fuse_network_group] Summary base network has OSPF protocol but non-Network payload"
+                                "[fuse_network_group] Base detailed network has OSPF protocol but non-Network payload"
                             );
                         }
                     }
                     Some(ProtocolData::IsIs(_)) => {
-                        panic!("[fuse_network_group] Encountered IS-IS network in summary-only group");
+                        panic!(
+                            "[fuse_network_group] Encountered IS-IS detailed network (unsupported)"
+                        );
                     }
                     Some(ProtocolData::Other(desc)) => {
                         panic!(
-                            "[fuse_network_group] Encountered unsupported protocol in summary-only group: {}",
+                            "[fuse_network_group] Encountered unsupported detailed network protocol: {}",
                             desc
                         );
                     }
                     None => {
-                        panic!("[fuse_network_group] Summary base network missing protocol_data");
+                        panic!("[fuse_network_group] Detailed network missing protocol_data");
                     }
                 }
             } else {
-                panic!("[fuse_network_group] Summary-only base node not a Network");
+                panic!("[fuse_network_group] Detailed vector first element not a Network node");
             }
-        
-            base
+            return base;
+        }
+
+        // Case 2: Only summaries exist → produce one summary base
+        let mut base = summary
+            .pop()
+            .expect("[fuse_network_group] Called with empty group (no nodes)");
+
+        if let NodeInfo::Network(base_net) = &mut base.info {
+            // Union ABR attachments from remaining summary nodes
+            for s in &summary {
+                if let NodeInfo::Network(net) = &s.info {
+                    union_attached(&mut base_net.attached_routers, &net.attached_routers);
+                } else {
+                    panic!("[fuse_network_group] Summary-only group contained non-network node");
+                }
+            }
+
+            // Merge summary metrics
+            match &mut base_net.protocol_data {
+                Some(ProtocolData::Ospf(base_pd)) => {
+                    if let OspfPayload::Network(base_np) = &mut base_pd.payload {
+                        let mut extra_refs: Vec<&OspfNetworkPayload> = Vec::new();
+                        for s in &summary {
+                            if let NodeInfo::Network(net) = &s.info {
+                                match &net.protocol_data {
+                                    Some(ProtocolData::Ospf(opd)) => {
+                                        if let OspfPayload::Network(np) = &opd.payload {
+                                            extra_refs.push(np);
+                                        } else {
+                                            panic!(
+                                                "[fuse_network_group] Summary node OSPF data but non-Network payload"
+                                            );
+                                        }
+                                    }
+                                    Some(ProtocolData::IsIs(_)) => {
+                                        panic!(
+                                            "[fuse_network_group] Encountered IS-IS summary network (unsupported)"
+                                        );
+                                    }
+                                    Some(ProtocolData::Other(desc)) => {
+                                        panic!(
+                                            "[fuse_network_group] Encountered unsupported summary network protocol: {}",
+                                            desc
+                                        );
+                                    }
+                                    None => {
+                                        panic!(
+                                            "[fuse_network_group] Missing protocol_data in summary network node"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        union_summaries(base_np, &extra_refs);
+                    } else {
+                        panic!(
+                            "[fuse_network_group] Summary base network has OSPF protocol but non-Network payload"
+                        );
+                    }
+                }
+                Some(ProtocolData::IsIs(_)) => {
+                    panic!("[fuse_network_group] Encountered IS-IS network in summary-only group");
+                }
+                Some(ProtocolData::Other(desc)) => {
+                    panic!(
+                        "[fuse_network_group] Encountered unsupported protocol in summary-only group: {}",
+                        desc
+                    );
+                }
+                None => {
+                    panic!("[fuse_network_group] Summary base network missing protocol_data");
+                }
+            }
+        } else {
+            panic!("[fuse_network_group] Summary-only base node not a Network");
+        }
+
+        base
     }
 }
 

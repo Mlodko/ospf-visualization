@@ -14,11 +14,10 @@ Re-exports:
 - `OspfSnmpTopology` as the default OSPF-over-SNMP topology provider.
 */
 
-pub mod ospf;
 pub mod ospf_protocol;
 pub mod protocol;
 pub mod source;
 pub mod store;
 
-pub use ospf_protocol::{OspfSnmpTopology, new_ospf_snmp_topology};
+pub use ospf_protocol::{OspfSnmpTopology};
 pub use source::TopologySource;

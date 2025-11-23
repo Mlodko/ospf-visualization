@@ -340,6 +340,8 @@ impl super::protocol::AcquisitionSource<OspfProtocol> for OspfSnmpAcquisition {
 /// Convenience alias matching previous API style.
 pub type OspfSnmpTopology = super::protocol::Topology<OspfProtocol, OspfSnmpAcquisition>;
 
-pub fn new_ospf_snmp_topology(client: SnmpClient) -> OspfSnmpTopology {
-    super::protocol::Topology::new(OspfProtocol, OspfSnmpAcquisition::new(client))
+impl OspfSnmpTopology {
+    pub fn from_snmp_client(client: SnmpClient) -> Self {
+        Self::new(OspfProtocol, OspfSnmpAcquisition::new(client))
+    }
 }
