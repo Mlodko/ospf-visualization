@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, str::FromStr};
+use std::collections::{HashMap, HashSet};
 
 use eframe::egui::Color32;
 use egui::Pos2;
@@ -10,9 +10,9 @@ use uuid::Uuid;
 use crate::{
     gui::node_shape::MyNodeShape,
     network::{
-        edge::{Edge, EdgeMetric},
-        node::{Node, NodeInfo},
-        router::RouterId,
+        edge::{Edge, EdgeKind, EdgeMetric},
+        node::{Node, NodeInfo, OspfPayload, ProtocolData}, router::RouterId,
+        // removed unused RouterId import
     },
 };
 
@@ -20,8 +20,8 @@ const IF_SKIP_FUNCTIONALLY_P2P_NETWORKS: bool = false;
 
 /// A protocol-agnostic graph wrapper used by the GUI.
 ///
-/// Builds a graph from Nodes and wires edges based on attached_routers.
-/// node_id_to_index_map maps stable UUIDs to graph indices to allow safe lookups.
+/// Builds a graph from `Node`s and wires edges based on attached_routers.
+/// `node_id_to_index_map` maps stable UUIDs to graph indices to allow safe lookups.
 
 #[allow(dead_code)]
 pub struct NetworkGraph {
@@ -44,53 +44,59 @@ impl NetworkGraph {
             (graph, node_id_to_index_map)
         };
 
-        // First pass (immutable): collect edges to add so we don't hold an immutable borrow
-        // while trying to mutably add edges later.
-        let mut edges_to_add: Vec<(NodeIndex, uuid::Uuid, uuid::Uuid)> = Vec::new();
-        let mut node_indices_to_remove = Vec::new();
-        for net_index in graph.node_indices() {
-            if let NodeInfo::Network(network) = &graph[net_index].info {
-                let net_id = graph[net_index].id;
-
-                // If only 2 routers are attached, connect them directly and remove the network node
-                if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
-                    let router1_id = network.attached_routers[0].to_uuidv5();
-                    let router2_id = network.attached_routers[1].to_uuidv5();
-                    if let (Some(&router1_index), Some(&router2_index)) = (
-                        node_id_to_index_map.get(&router1_id),
-                        node_id_to_index_map.get(&router2_id),
-                    ) {
-                        edges_to_add.push((router1_index, router1_id, router2_id));
-                        edges_to_add.push((router2_index, router2_id, router1_id));
-                        node_indices_to_remove.push(net_index);
-                    }
-                    continue;
-                }
-
-                // Only make an edge from the router to the network
-                for router_node_id in network.attached_routers.iter().map(RouterId::to_uuidv5) {
-                    if let Some(&router_index) = node_id_to_index_map.get(&router_node_id) {
-                        edges_to_add.push((router_index, router_node_id, net_id));
-                    }
-                }
-            }
-        }
+        // Collect edge specs & networks to remove via helper
+        let (edge_specs, node_indices_to_remove) =
+            Self::collect_edge_specs_stable(&graph, &node_id_to_index_map);
 
         for node_index in node_indices_to_remove {
             let _ = graph.remove_node(node_index);
         }
 
-        // Second pass (mutable): add collected edges, checking that destination nodes exist.
-        for (src_index, src_id, dest_id) in edges_to_add {
-            if let Some(router_index) = node_id_to_index_map.get(&dest_id) {
+        // Materialize edges
+        for (src_idx, src_uuid, dst_uuid, kind) in edge_specs {
+            let metric = {
+                if let Some(src_node) = graph.node_weight(src_idx) {
+                    if let NodeInfo::Router(router) = &src_node.info {
+                        match &router.protocol_data {
+                            Some(ProtocolData::Ospf(ospf_data)) => {
+                                if let OspfPayload::Router(payload) = &ospf_data.payload {
+                                    let metric_by_uuid: HashMap<Uuid, u16> = payload.link_metrics.iter().map(|(ip, metric)| (RouterId::Ipv4(*ip).to_uuidv5(), *metric)).collect();
+                                    if let Some(metric) = metric_by_uuid.get(&dst_uuid) {
+                                        EdgeMetric::Ospf(*metric as u32)
+                                    }
+                                    else {
+                                        EdgeMetric::Other
+                                    }
+                                } else {
+                                    EdgeMetric::Other
+                                }
+                            }
+                            None => EdgeMetric::Other,
+                            _ => panic!("Unexpected protocol data")
+                        }
+                    } else {
+                        EdgeMetric::Other
+                    }
+                } else {
+                    EdgeMetric::Other
+                }
+            };
+            if let Some(&dst_idx) = node_id_to_index_map.get(&dst_uuid) {
                 let edge = Edge {
-                    source_id: src_id,
-                    destination_id: dest_id,
-                    metric: EdgeMetric::Ospf,
+                    source_id: src_uuid,
+                    destination_id: dst_uuid,
+                    kind,
+                    metric: metric,
+                    protocol_tag: Some("OSPF".to_string()),
                 };
-                graph.add_edge(src_index, *router_index, edge);
+                graph.add_edge(src_idx, dst_idx, edge);
             }
         }
+        eprintln!(
+            "[network_graph::build_new] materialized {} edges ({} nodes)",
+            graph.edge_count(),
+            graph.node_count()
+        );
 
         let mut graph: egui_graphs::Graph<
             Node,
@@ -153,11 +159,11 @@ impl NetworkGraph {
         }
     }
 
-    // Reconcile the existing graph in place to match the provided nodes (by UUID).
-    // - Updates/keeps positions for existing nodes
-    // - Adds new nodes with a seeded position
-    // - Removes vanished nodes
-    // - Rebuilds edges from current nodes (router -> network)
+    /// Reconcile the existing graph in place to match the provided nodes (by UUID).
+    /// - Updates/keeps positions for existing nodes
+    /// - Adds new nodes with a seeded position
+    /// - Removes vanished nodes
+    /// - Rebuilds edges from current nodes (router -> network)
     pub fn reconcile(&mut self, desired_nodes: Vec<Node>) {
         let mut rng = rand::rng();
 
@@ -191,13 +197,16 @@ impl NetworkGraph {
                     // Replace payload wholesale, preserving position and selection state.
                     // (Store position first if needed.)
                     let pos = node.location();
-                    *node.payload_mut() = desired.clone();  // requires a payload_mut() API; if not available, re-add node.
-                
+                    *node.payload_mut() = desired.clone(); // requires a payload_mut() API; if not available, re-add node.
+
                     // Reapply label/color logic based on the new payload.
-                    let label = desired.label.clone().unwrap_or_else(|| match &desired.info {
-                        NodeInfo::Network(_) => "Network".to_string(),
-                        NodeInfo::Router(_)  => "Router".to_string(),
-                    });
+                    let label = desired
+                        .label
+                        .clone()
+                        .unwrap_or_else(|| match &desired.info {
+                            NodeInfo::Network(_) => "Network".to_string(),
+                            NodeInfo::Router(_) => "Router".to_string(),
+                        });
                     let router_color = Color32::BLUE;
                     let network_color = Color32::GREEN;
                     let inter_area_color = Color32::LIGHT_GREEN;
@@ -206,7 +215,7 @@ impl NetworkGraph {
                     } else {
                         match &desired.info {
                             NodeInfo::Network(_) => network_color,
-                            NodeInfo::Router(_)  => router_color,
+                            NodeInfo::Router(_) => router_color,
                         }
                     };
                     node.set_label(label);
@@ -251,62 +260,13 @@ impl NetworkGraph {
             }
         }
 
-        // 4) Rebuild edges to reflect current nodes (router -> network)
-        //    You can either diff edges or clear and rebuild. For simplicity, rebuild.
-        //    If your Graph API doesn’t have clear_edges(), remove via iteration.
+        // 4) Rebuild edges using helper (membership + logical reachability)
         self.clear_all_edges();
-
-        // For each Network node present, add edges from each attached router to the network node.
-        // (Same logic as in build_new)
-        for (net_uuid, &net_idx) in self.node_id_to_index_map.iter() {
-            // We need to know if this is a network; read the payload back
-            if let Some(net_node) = self.graph.node(net_idx) {
-                let payload = net_node.payload();
-                if let NodeInfo::Network(network) = &payload.info {
-                    if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
-                        let r1 = network.attached_routers[0].to_uuidv5();
-                        let r2 = network.attached_routers[1].to_uuidv5();
-                        if let (Some(&r1_idx), Some(&r2_idx)) = (
-                            self.node_id_to_index_map.get(&r1),
-                            self.node_id_to_index_map.get(&r2),
-                        ) {
-                            let e1 = Edge {
-                                source_id: r1,
-                                destination_id: *net_uuid,
-                                metric: EdgeMetric::Ospf,
-                            };
-                            let e2 = Edge {
-                                source_id: r2,
-                                destination_id: *net_uuid,
-                                metric: EdgeMetric::Ospf,
-                            };
-                            self.graph.add_edge(r1_idx, net_idx, e1);
-                            self.graph.add_edge(r2_idx, net_idx, e2);
-                        }
-                        continue;
-                    }
-                    for rid in network
-                        .attached_routers
-                        .clone()
-                        .iter()
-                        .map(RouterId::to_uuidv5)
-                    {
-                        if let Some(&r_idx) = self.node_id_to_index_map.get(&rid) {
-                            let e = Edge {
-                                source_id: rid,
-                                destination_id: *net_uuid,
-                                metric: EdgeMetric::Ospf,
-                            };
-                            self.graph.add_edge(r_idx, net_idx, e);
-                        }
-                    }
-                }
-            }
-        }
+        let edge_specs = self.collect_edge_specs_live();
+        self.materialize_edges(edge_specs, "[network_graph::reconcile]");
     }
 
-    // Helper: remove all edges from the graph.
-    // Implement using your egui_graphs version’s edge removal API.
+    /// Helper: remove all edges from the graph.
     fn clear_all_edges(&mut self) {
         let edge_indices: Vec<_> = self.graph.edges_iter().map(|(ei, _)| ei).collect();
         for ei in edge_indices {
@@ -314,9 +274,127 @@ impl NetworkGraph {
         }
     }
 
-    pub fn to_string(&self) -> String {
+    /// Helper: collect edge specs from StableGraph during build_new
+    /// Returns a tuple `(Vec<graph source node index, source uuid, destination uuid, EdgeKind>, Vec<graph indices of nodes to remove>)`
+    fn collect_edge_specs_stable(
+        graph: &StableGraph<Node, Edge, Directed, DefaultIx>,
+        id_map: &HashMap<Uuid, NodeIndex>,
+    ) -> (Vec<(NodeIndex, Uuid, Uuid, EdgeKind)>, Vec<NodeIndex>) {
+        let mut node_indices_to_remove = Vec::new();
+        let mut specs: Vec<(NodeIndex, Uuid, Uuid, EdgeKind)> = Vec::new();
+        let mut seen: HashSet<(Uuid, Uuid, EdgeKind)> = HashSet::new();
+
+        for net_index in graph.node_indices() {
+            if let NodeInfo::Network(network) = &graph[net_index].info {
+                let net_uuid = graph[net_index].id;
+
+                if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
+                    // Optionally collapse; current policy: just mark for removal
+                    node_indices_to_remove.push(net_index);
+                    continue;
+                }
+
+                // Membership
+                for rid in &network.attached_routers {
+                    let r_uuid = rid.to_uuidv5();
+                    if let Some(&r_idx) = id_map.get(&r_uuid) {
+                        let kind = EdgeKind::Membership;
+                        if seen.insert((r_uuid, net_uuid, kind.clone())) {
+                            specs.push((r_idx, r_uuid, net_uuid, kind));
+                        }
+                    }
+                }
+
+                // Logical Reachability
+                if let Some(ProtocolData::Ospf(data)) = &network.protocol_data {
+                    if let OspfPayload::Network(payload) = &data.payload {
+                        for s in &payload.summaries {
+                            let abr_uuid = s.origin_abr.to_uuidv5();
+                            if let Some(&abr_idx) = id_map.get(&abr_uuid) {
+                                let kind = EdgeKind::LogicalReachability;
+                                if seen.insert((abr_uuid, net_uuid, kind.clone())) {
+                                    specs.push((abr_idx, abr_uuid, net_uuid, kind));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        (specs, node_indices_to_remove)
+    }
+
+    /// Helper: collect edge specs from the live egui_graphs graph during reconcile
+    /// Returns a `Vec<(graph source node index, source uuid, destination uuid, EdgeKind)>`
+    fn collect_edge_specs_live(&self) -> Vec<(NodeIndex, Uuid, Uuid, EdgeKind)> {
+        let mut specs = Vec::new();
+        let mut seen: HashSet<(Uuid, Uuid, EdgeKind)> = HashSet::new();
+
+        for (net_uuid, &net_idx) in self.node_id_to_index_map.iter() {
+            if let Some(net_node) = self.graph.node(net_idx) {
+                let payload = net_node.payload();
+                if let NodeInfo::Network(network) = &payload.info {
+                    if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
+                        continue;
+                    }
+
+                    // Membership
+                    for rid in &network.attached_routers {
+                        let r_uuid = rid.to_uuidv5();
+                        if let Some(&r_idx) = self.node_id_to_index_map.get(&r_uuid) {
+                            let kind = EdgeKind::Membership;
+                            if seen.insert((r_uuid, *net_uuid, kind.clone())) {
+                                specs.push((r_idx, r_uuid, *net_uuid, kind));
+                            }
+                        }
+                    }
+
+                    // Logical Reachability
+                    if let Some(ProtocolData::Ospf(data)) = &network.protocol_data {
+                        if let OspfPayload::Network(net_payload) = &data.payload {
+                            for s in &net_payload.summaries {
+                                let abr_uuid = s.origin_abr.to_uuidv5();
+                                if let Some(&abr_idx) = self.node_id_to_index_map.get(&abr_uuid) {
+                                    let kind = EdgeKind::LogicalReachability;
+                                    if seen.insert((abr_uuid, *net_uuid, kind.clone())) {
+                                        specs.push((abr_idx, abr_uuid, *net_uuid, kind));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        specs
+    }
+
+    /// Helper: materialize edge specs into the live graph
+    fn materialize_edges(&mut self, specs: Vec<(NodeIndex, Uuid, Uuid, EdgeKind)>, log_tag: &str) {
+        let mut added = 0usize;
+        for (src_idx, src_uuid, dst_uuid, kind) in specs {
+            if let Some(&dst_idx) = self.node_id_to_index_map.get(&dst_uuid) {
+                let edge = Edge {
+                    source_id: src_uuid,
+                    destination_id: dst_uuid,
+                    kind,
+                    metric: EdgeMetric::Other,
+                    protocol_tag: Some("OSPF".to_string()),
+                };
+                self.graph.add_edge(src_idx, dst_idx, edge);
+                added += 1;
+            }
+        }
+        eprintln!("{log_tag} materialized {added} edges");
+    }
+}
+
+impl ToString for NetworkGraph {
+    fn to_string(&self) -> String {
         use petgraph::Direction;
-        let mut output = String::from_str("Network Graph {\n").unwrap();
+        let mut output = String::from("Network Graph {\n");
 
         // Collect nodes with indices for deterministic ordering (Routers first, then Networks, then by identifier)
         let mut nodes: Vec<(

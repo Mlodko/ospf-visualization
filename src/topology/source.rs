@@ -44,6 +44,9 @@ pub trait TopologySource: Send + Sync {
 
 type SourceId = RouterId;
 
+/// An async trait for providing a snapshot of topology data to the GUI.
+/// Implementations hide transport/protocol details and return protocol-agnostic nodes.
+/// Prefer this over TopologySource - this allows for integration with topology source mechanisms.
 #[async_trait]
 pub trait SnapshotSource: TopologySource {
     async fn fetch_source_id(&mut self) -> TopologyResult<SourceId>;

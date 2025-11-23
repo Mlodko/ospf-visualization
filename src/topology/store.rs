@@ -1,4 +1,14 @@
 #![allow(dead_code)]
+
+/*!
+This module provides mechanisms necessary for storing, managing and merging topology data from different sources.
+
+This module defines:
+- `Partition`: Collection of nodes originating from one source (e.g. a router from which the topology data is collected)
+- `SourceHealth`: Represents a source's status
+- `SourceState`: Holds information about a source, as well as the partition it manages.
+*/
+
 use crate::network::{
     node::{Node, NodeInfo, OspfNetworkPayload, OspfPayload, PerAreaRouterFacet, ProtocolData},
     router::{Router, RouterId},
@@ -14,11 +24,13 @@ use uuid::Uuid;
 
 pub type SourceId = RouterId;
 
+/// Collection of nodes originating from one source (e.g. a router from which the topology data is collected)
 #[derive(Clone, Debug, Default)]
 pub struct Partition {
     pub nodes: HashMap<Uuid, Node>,
 }
 impl Partition {
+    /// Creates a new Partition
     pub fn new(nodes: Vec<Node>) -> Self {
         let mut map = HashMap::with_capacity(nodes.len());
         for node in nodes {
@@ -28,6 +40,7 @@ impl Partition {
     }
 }
 
+/// Represents a source's status
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SourceHealth {
     Connected,
@@ -35,6 +48,7 @@ pub enum SourceHealth {
 }
 
 #[derive(Debug)]
+/// Holds information about a source, as well as the partition it manages.
 pub struct SourceState {
     pub health: SourceHealth,
     pub partition: Partition,
@@ -43,6 +57,7 @@ pub struct SourceState {
     pub last_status_change: Instant, // when health last changed
 }
 impl SourceState {
+    /// Creates a new `SourceState` from a `Partition` and the `Instant` of the last data update.
     pub fn new(partition: Partition, ts: Instant) -> Self {
         SourceState {
             partition,
@@ -54,11 +69,14 @@ impl SourceState {
     }
 }
 
+/// Storage for all known sources. Manages merging topologies from sources.
 #[derive(Debug, Default)]
 pub struct TopologyStore {
     sources: HashMap<SourceId, SourceState>,
 }
 
+
+/// Represents a router as seen from one source.
 #[derive(Debug, Clone)]
 pub struct RouterFacet {
     pub source_id: SourceId,
@@ -69,8 +87,9 @@ pub struct RouterFacet {
     pub node: Node,
 }
 
+/// Holds all `RouterFacet`s of a router node
 #[derive(Debug, Clone)]
-pub struct DuplicateRouterBucket {
+struct DuplicateRouterBucket {
     pub router_uuid: Uuid,
     pub facets: Vec<RouterFacet>,
     pub area_set: HashSet<Ipv4Addr>,
@@ -176,6 +195,7 @@ impl ToString for TopologyStore {
 }
 
 impl TopologyStore {
+    /// Replace the partition of a source with a new set of nodes. If a node is already part of the partition its data is updated.
     pub fn replace_partition(&mut self, src_id: SourceId, nodes: Vec<Node>, timestamp: Instant) {
         // annotate nodes with their source for partition-based highlighting
         let mut annotated = Vec::with_capacity(nodes.len());
@@ -198,7 +218,8 @@ impl TopologyStore {
             }
         }
     }
-
+    
+    /// Mark a source as lost.
     pub fn mark_lost(&mut self, src_id: &SourceId, timestamp: Instant) {
         if let Some(state) = self.sources.get_mut(src_id) {
             state.health = SourceHealth::Lost;
@@ -218,7 +239,8 @@ impl TopologyStore {
             );
         }
     }
-
+    
+    /// Detect duplicate routers in the topology.
     fn detect_router_duplicates(&self, connected_only: bool) -> Vec<DuplicateRouterBucket> {
         let mut buckets = HashMap::new();
         let partitions = self
@@ -298,7 +320,9 @@ impl TopologyStore {
         }
         out
     }
-
+    
+    /// Fuse a duplicate router bucket into a single router node. Rules are:
+    /// TODO
     fn fuse_router_bucket(bucket: DuplicateRouterBucket) -> Node {
         let base_router = match &bucket.facets[0].node.info {
             NodeInfo::Router(r) => r.clone(),
@@ -419,7 +443,7 @@ impl TopologyStore {
     // 1) prefer Connected over Lost
     // 2) if same, prefer newer last_snapshot
     // 3) if same, prefer smaller SourceId (deterministic)
-    #[deprecated]
+    #[deprecated(note = "Use build_merged_view instead")]
     pub fn union_nodes(&self, connected_only: bool) -> Vec<Node> {
         let mut best: HashMap<Uuid, (Node, bool, Instant, &SourceId)> = HashMap::new();
 
@@ -455,6 +479,7 @@ impl TopologyStore {
         best.into_values().map(|(n, _, _, _)| n).collect()
     }
     
+    /// Fuse a group of network nodes into a single node.
     fn fuse_network_group(nodes: Vec<Node>) -> Node {
         use std::collections::HashSet;
         
@@ -649,6 +674,7 @@ impl TopologyStore {
     }
 }
 
+/// Kinds of network nodes.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum NetKind {
     Detailed, // Type-2 Network-LSA
@@ -656,6 +682,7 @@ enum NetKind {
     Other,
 }
 
+/// Classify a network node based on its protocol data.
 fn classify_network_kind(node: &Node) -> NetKind {
     match &node.info {
         NodeInfo::Network(net) => {

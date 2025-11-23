@@ -19,7 +19,7 @@ use egui::{CentralPanel, CollapsingHeader, Context, Id, Separator, SidePanel, Ui
 use egui_graphs::{
     DefaultEdgeShape, FruchtermanReingoldWithCenterGravity,
     FruchtermanReingoldWithCenterGravityState, LayoutForceDirected, SettingsInteraction,
-    SettingsNavigation,
+    SettingsNavigation, SettingsStyle,
 };
 use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex};
 use tokio::runtime::Runtime;
@@ -155,7 +155,10 @@ impl App {
                 .on_hover_text("Toggle partition-wide highlight on hover")
                 .changed()
             {
-                println!("[app] Partition highlight changed to: {}", highlight_enabled);
+                println!(
+                    "[app] Partition highlight changed to: {}",
+                    highlight_enabled
+                );
                 set_partition_highlight_enabled(highlight_enabled);
             }
             ui.separator();
@@ -198,13 +201,14 @@ impl App {
                         let rt = self.runtime.clone();
                         println!("[app] Pressed connect button");
                         println!(
-"[app] Connecting to new SNMP target {{
+                            "[app] Connecting to new SNMP target {{
 \tIP: {}:{}
 \tCommunity: {}
 \tClear sources: {}
 \tLive view: {}
 }}",
-                            self.snmp_host, self.snmp_port,
+                            self.snmp_host,
+                            self.snmp_port,
                             self.snmp_community,
                             self.clear_sources_on_switch,
                             self.live_view_only
@@ -290,6 +294,7 @@ impl App {
                     .with_fit_to_screen_enabled(true),
             )
             .with_interactions(&SettingsInteraction::default().with_node_selection_enabled(true));
+            
 
             // Add widget and obtain response so we can overlay labels afterwards.
             let _response = ui.add(widget);
@@ -382,7 +387,10 @@ impl App {
         if self.clear_sources_on_switch {
             self.store = TopologyStore::default();
         }
-        println!("[app] Switched SNMP source to {}:{}", self.snmp_host, self.snmp_port);
+        println!(
+            "[app] Switched SNMP source to {}:{}",
+            self.snmp_host, self.snmp_port
+        );
         self.refresh_from_source().await;
     }
 

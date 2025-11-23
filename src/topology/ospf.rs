@@ -1,5 +1,13 @@
-use async_trait::async_trait;
+/*!
+This module provides an implementation of the GUI-facing topology source for OSPF.
+Internally, it uses the protocol-centric OspfDataSource and converts parsed LSAs into protocol-agnostic `Node`s.
+This module defines:
+- `OspfTopology`: OSPF implementation of the GUI-facing topology source.
+- `OspfSnmpTopology`: Convenience alias for the SNMP-backed OSPF topology.
 
+*/
+
+use async_trait::async_trait;
 use crate::data_aquisition::snmp::SnmpClient;
 use crate::network::node::{Node, NodeInfo, OspfPayload, ProtocolData};
 use crate::network::router::RouterId;
@@ -10,8 +18,9 @@ use crate::topology::source::{SnapshotSource, TopologyError, TopologySource};
 use crate::topology::store::SourceId;
 use std::collections::HashMap;
 
+
 /// OSPF-over-SNMP implementation of the GUI-facing topology source.
-/// Internally, this uses the protocol-centric OspfDataSource (implemented by OspfSnmpSource)
+/// Internally, this uses the protocol-centric OspfDataSource
 /// and converts parsed LSAs into protocol-agnostic `Node`s.
 pub struct OspfTopology<S: OspfDataSource> {
     source: S,
@@ -418,112 +427,5 @@ fn map_ospf_source_err(err: OspfSourceError) -> TopologyError {
     match err {
         OspfSourceError::Acquisition(s) => TopologyError::Acquisition(s),
         OspfSourceError::Invalid(s) => TopologyError::Protocol(s),
-    }
-}
-
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn debug_topology_merge() {
-        use crate::data_aquisition::snmp::SnmpClient;
-        use crate::topology::source::SnapshotSource;
-        use crate::topology::store::TopologyStore;
-        use snmp2::Version;
-
-        let addr1: std::net::SocketAddr = "127.0.0.1:1161".parse().unwrap();
-        let addr2: std::net::SocketAddr = "127.0.0.1:1166".parse().unwrap();
-
-        let client1 = SnmpClient::new(addr1, "public", Version::V2C, None);
-        let client2 = SnmpClient::new(addr2, "public", Version::V2C, None);
-
-        let mut topo1 = super::OspfSnmpTopology::new(client1);
-        let mut topo2 = super::OspfSnmpTopology::new(client2);
-
-        let mut store = TopologyStore::default();
-
-        // Source 1
-        let now = std::time::Instant::now();
-        match topo1.fetch_snapshot().await {
-            Ok((src, nodes)) => {
-                println!(
-                    "[debug_topology_merge] source1={} nodes={}",
-                    src,
-                    nodes.len()
-                );
-                store.replace_partition(src, nodes, now);
-            }
-            Err(e) => {
-                eprintln!("[debug_topology_merge] source1 fetch failed: {:?}", e);
-            }
-        }
-
-        // Source 2
-        let now = std::time::Instant::now();
-        match topo2.fetch_snapshot().await {
-            Ok((src, nodes)) => {
-                println!(
-                    "[debug_topology_merge] source2={} nodes={}",
-                    src,
-                    nodes.len()
-                );
-                store.replace_partition(src, nodes, now);
-            }
-            Err(e) => {
-                eprintln!("[debug_topology_merge] source2 fetch failed: {:?}", e);
-            }
-        }
-
-        println!(
-            "[debug_topology_merge] store summary:\n{}",
-            store.to_string()
-        );
-
-        // Build merged views
-        let merged_connected = store.build_merged_view(true);
-        let merged_all = store.build_merged_view(false);
-
-        let routers_connected = merged_connected
-            .iter()
-            .filter(|n| matches!(n.info, crate::network::node::NodeInfo::Router(_)))
-            .count();
-        let networks_connected = merged_connected
-            .iter()
-            .filter(|n| matches!(n.info, crate::network::node::NodeInfo::Network(_)))
-            .count();
-        println!(
-            "[debug_topology_merge] merged (connected_only=true): routers={} networks={}",
-            routers_connected, networks_connected
-        );
-
-        for node in &merged_connected {
-            match &node.info {
-                crate::network::node::NodeInfo::Router(r) => {
-                    println!("Router {}", r.id);
-                }
-                crate::network::node::NodeInfo::Network(net) => {
-                    let attached = net
-                        .attached_routers
-                        .iter()
-                        .map(|r| r.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    println!("Network {} -> [{}]", net.ip_address, attached);
-                }
-            }
-        }
-
-        let routers_all = merged_all
-            .iter()
-            .filter(|n| matches!(n.info, crate::network::node::NodeInfo::Router(_)))
-            .count();
-        let networks_all = merged_all
-            .iter()
-            .filter(|n| matches!(n.info, crate::network::node::NodeInfo::Network(_)))
-            .count();
-        println!(
-            "[debug_topology_merge] merged (connected_only=false): routers={} networks={}",
-            routers_all, networks_all
-        );
     }
 }
