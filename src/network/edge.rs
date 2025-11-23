@@ -1,6 +1,5 @@
 use uuid::Uuid;
 
-
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Edge {
@@ -17,7 +16,7 @@ pub enum EdgeMetric {
     // TODO
     Ospf(u32),
     IsIs(u32),
-    Other
+    Other,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

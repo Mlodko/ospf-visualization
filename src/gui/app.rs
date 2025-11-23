@@ -94,7 +94,9 @@ impl App {
         let _ = cc; // silence unused variable warning for now
 
         let snmp_client = crate::data_aquisition::snmp::SnmpClient::default();
-        let mut topo: Box<dyn SnapshotSource> = Box::new(OspfSnmpTopology::new(snmp_client));
+        let mut topo: Box<dyn SnapshotSource> = Box::new(
+            crate::topology::ospf_protocol::new_ospf_snmp_topology(snmp_client),
+        );
         let mut store = TopologyStore::default();
 
         // First snapshot: replace partition and build union (live-only)
@@ -294,7 +296,6 @@ impl App {
                     .with_fit_to_screen_enabled(true),
             )
             .with_interactions(&SettingsInteraction::default().with_node_selection_enabled(true));
-            
 
             // Add widget and obtain response so we can overlay labels afterwards.
             let _response = ui.add(widget);
@@ -383,7 +384,9 @@ impl App {
             snmp2::Version::V2C,
             None,
         );
-        self.topo = Box::new(OspfSnmpTopology::new(client));
+        self.topo = Box::new(crate::topology::ospf_protocol::new_ospf_snmp_topology(
+            client,
+        ));
         if self.clear_sources_on_switch {
             self.store = TopologyStore::default();
         }

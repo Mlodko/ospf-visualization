@@ -8,21 +8,18 @@ use async_trait::async_trait;
 
 use crate::{network::node::Node, topology::{TopologySource, source::{SnapshotSource, TopologyError}, store::SourceId}};
 
-/// Acquisition errors: transport and shaping
 #[derive(Debug)] 
 pub enum AcquisitionError {
     Transport(String),
     Invalid(String)
 }
 
-/// Protocol parsing errors
 #[derive(Debug)]
 pub enum ProtocolParseError {
     Malformed(String),
     Unsupported(String)
 }
 
-/// Protocol topology (mapping + semantic consolidation) errors
 #[derive(Debug)]
 pub enum ProtocolTopologyError {
     Conversion(String),
@@ -56,28 +53,23 @@ impl From<ProtocolTopologyError> for TopologyError {
 
 type AcquisitionResult<T> = Result<T, AcquisitionError>;
 
-/// Represents a source of raw records for a routing protocol, e.g. OSPF over SNMP.
 #[async_trait]
 pub trait AcquisitionSource<P: RoutingProtocol>: Send + Sync {
-    /// Fetches the raw records from the source.
     async fn fetch_raw(&mut self) -> AcquisitionResult<Vec<P::RawRecord>>;
-    /// Fetches the source ID from the source.
     async fn fetch_source_id(&mut self) -> AcquisitionResult<SourceId>;
 }
 
-/// Represents a routing protocol, e.g. OSPF.
+/// Routing protocol contract.
 pub trait RoutingProtocol: Send + Sync {
     type RawRecord: Send;
     type ParsedItem: Send;
-    /// Parses raw records into protocol-specific items.
+
     fn parse(&self, raw: Self::RawRecord) -> Result<Vec<Self::ParsedItem>, ProtocolParseError>;
-    /// Converts protocol-specific items into topology nodes.
-    fn item_to_node(&self, item: &Self::ParsedItem) -> Result<Option<Node>, ProtocolTopologyError>;
-    /// Performs post-processing on the topology nodes.
+    // CHANGED: consume ParsedItem so protocol implementations can rely on existing TryInto
+    fn item_to_node(&self, item: Self::ParsedItem) -> Result<Option<Node>, ProtocolTopologyError>;
     fn post_process(&self, nodes: &mut Vec<Node>) -> Result<(), ProtocolTopologyError>;
 }
 
-/// Generic topology wrapper representing a (routing protocol, acquisition source) pair.
 pub struct Topology<P, S>
 where 
     P: RoutingProtocol,
@@ -109,7 +101,7 @@ where
         for record in raw {
             let parsed_items = self.protocol.parse(record).map_err(TopologyError::from)?;
             for item in parsed_items {
-                if let Some(node) = self.protocol.item_to_node(&item).map_err(TopologyError::from)? {
+                if let Some(node) = self.protocol.item_to_node(item).map_err(TopologyError::from)? {
                     nodes.push(node);
                 }
             }

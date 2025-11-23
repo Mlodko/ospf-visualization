@@ -8,10 +8,11 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    gui::node_shape::MyNodeShape,
+    gui::{edge_shape::MyEdgeShape, node_shape::MyNodeShape},
     network::{
         edge::{Edge, EdgeKind, EdgeMetric},
-        node::{Node, NodeInfo, OspfPayload, ProtocolData}, router::RouterId,
+        node::{Node, NodeInfo, OspfPayload, ProtocolData},
+        router::RouterId,
         // removed unused RouterId import
     },
 };
@@ -60,11 +61,16 @@ impl NetworkGraph {
                         match &router.protocol_data {
                             Some(ProtocolData::Ospf(ospf_data)) => {
                                 if let OspfPayload::Router(payload) = &ospf_data.payload {
-                                    let metric_by_uuid: HashMap<Uuid, u16> = payload.link_metrics.iter().map(|(ip, metric)| (RouterId::Ipv4(*ip).to_uuidv5(), *metric)).collect();
+                                    let metric_by_uuid: HashMap<Uuid, u16> = payload
+                                        .link_metrics
+                                        .iter()
+                                        .map(|(ip, metric)| {
+                                            (RouterId::Ipv4(*ip).to_uuidv5(), *metric)
+                                        })
+                                        .collect();
                                     if let Some(metric) = metric_by_uuid.get(&dst_uuid) {
                                         EdgeMetric::Ospf(*metric as u32)
-                                    }
-                                    else {
+                                    } else {
                                         EdgeMetric::Other
                                     }
                                 } else {
@@ -72,7 +78,7 @@ impl NetworkGraph {
                                 }
                             }
                             None => EdgeMetric::Other,
-                            _ => panic!("Unexpected protocol data")
+                            _ => panic!("Unexpected protocol data"),
                         }
                     } else {
                         EdgeMetric::Other
@@ -309,6 +315,14 @@ impl NetworkGraph {
                 if let Some(ProtocolData::Ospf(data)) = &network.protocol_data {
                     if let OspfPayload::Network(payload) = &data.payload {
                         for s in &payload.summaries {
+                            // Skip logical reachability edge if:
+                            // 1) This is a detailed network (designated_router_id present)
+                            // 2) The originating ABR is already attached (membership edge exists)
+                            if payload.designated_router_id.is_some()
+                                || network.attached_routers.iter().any(|r| r == &s.origin_abr)
+                            {
+                                continue;
+                            }
                             let abr_uuid = s.origin_abr.to_uuidv5();
                             if let Some(&abr_idx) = id_map.get(&abr_uuid) {
                                 let kind = EdgeKind::LogicalReachability;
@@ -354,6 +368,12 @@ impl NetworkGraph {
                     if let Some(ProtocolData::Ospf(data)) = &network.protocol_data {
                         if let OspfPayload::Network(net_payload) = &data.payload {
                             for s in &net_payload.summaries {
+                                // Skip logical reachability edge if detailed network or ABR already attached.
+                                if net_payload.designated_router_id.is_some()
+                                    || network.attached_routers.iter().any(|r| r == &s.origin_abr)
+                                {
+                                    continue;
+                                }
                                 let abr_uuid = s.origin_abr.to_uuidv5();
                                 if let Some(&abr_idx) = self.node_id_to_index_map.get(&abr_uuid) {
                                     let kind = EdgeKind::LogicalReachability;

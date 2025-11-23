@@ -15,9 +15,10 @@ Re-exports:
 */
 
 pub mod ospf;
+pub mod ospf_protocol;
+pub mod protocol;
 pub mod source;
 pub mod store;
-pub mod protocol;
 
-pub use ospf::OspfSnmpTopology;
-pub use source::{TopologySource};
+pub use ospf_protocol::{OspfSnmpTopology, new_ospf_snmp_topology};
+pub use source::TopologySource;

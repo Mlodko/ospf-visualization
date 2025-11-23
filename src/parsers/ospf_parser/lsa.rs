@@ -2,12 +2,13 @@ use crate::{
     network::node::{
         Node, NodeInfo, OspfData, OspfRouterPayload, PerAreaRouterFacet, ProtocolData,
     },
-    parsers::ospf_parser::source::OspfRawRow,
+    parsers::ospf_parser::source::OspfRawRow, topology::protocol::ProtocolTopologyError,
 };
 use ipnetwork::IpNetwork;
 use ospf_parser::{
     OspfLinkStateAdvertisement, OspfNetworkLinksAdvertisement, OspfRouterLinksAdvertisement,
 };
+use thiserror::Error;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
@@ -20,15 +21,32 @@ use crate::network::{
     router::{Router, RouterId},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 #[allow(dead_code)]
 pub enum LsaError {
+    #[error("Invalid LSA type")]
     InvalidLsaType,
+    #[error("Invalid network mask {0}")]
     InvalidNetworkMask(Ipv4Addr),
+    #[error("Protocol not implemented")]
     ProtocolNotImplemented,
+    #[error("Wrong SNMP table")]
     WrongSnmpTable,
+    #[error("Incomplete data")]
     IncompleteData,
+    #[error("Wrong data type")]
     WrongDataType,
+}
+
+impl Into<ProtocolTopologyError> for LsaError {
+    fn into(self) -> ProtocolTopologyError {
+        let description = self.to_string();
+        use LsaError::*;
+        match self {
+            InvalidLsaType | InvalidNetworkMask(_) | WrongSnmpTable => ProtocolTopologyError::Semantic(description),
+            ProtocolNotImplemented | IncompleteData | WrongDataType => ProtocolTopologyError::Conversion(description)
+        }
+    }
 }
 
 #[derive(Debug)]
