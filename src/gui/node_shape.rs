@@ -14,7 +14,7 @@ use crate::network::{
 };
 
 #[derive(Clone)]
-pub struct MyNodeShape {
+pub struct NetworkGraphNodeShape {
     pub label: String,
     pub pos: Pos2,
     pub radius: f32,
@@ -69,7 +69,7 @@ pub fn take_label_overlays() -> Vec<LabelOverlay> {
     LABEL_OVERLAY.with(|v| v.borrow_mut().drain(..).collect())
 }
 
-impl From<NodeProps<Node>> for MyNodeShape {
+impl From<NodeProps<Node>> for NetworkGraphNodeShape {
     fn from(node_props: NodeProps<Node>) -> Self {
         let payload = &node_props.payload;
         let router_id = if let NodeInfo::Router(router) = &payload.info {
@@ -94,7 +94,7 @@ impl From<NodeProps<Node>> for MyNodeShape {
     }
 }
 
-impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for MyNodeShape {
+impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for NetworkGraphNodeShape {
     fn closest_boundary_point(&self, dir: Vec2) -> Pos2 {
         closest_point_on_circle(self.pos, self.radius, dir)
     }
@@ -199,7 +199,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for MyN
     }
 }
 
-impl MyNodeShape {
+impl NetworkGraphNodeShape {
     fn is_interacted(&self) -> bool {
         self.selected || self.dragged || self.hovered
     }

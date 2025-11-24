@@ -8,7 +8,7 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    gui::node_shape::MyNodeShape,
+    gui::node_shape::NetworkGraphNodeShape,
     network::{
         edge::{Edge, EdgeKind, EdgeMetric},
         node::{Node, NodeInfo, OspfPayload, ProtocolData},
@@ -26,7 +26,7 @@ const IF_SKIP_FUNCTIONALLY_P2P_NETWORKS: bool = false;
 
 #[allow(dead_code)]
 pub struct NetworkGraph {
-    pub graph: Graph<Node, crate::network::edge::Edge, Directed, DefaultIx, MyNodeShape>,
+    pub graph: Graph<Node, crate::network::edge::Edge, Directed, DefaultIx, NetworkGraphNodeShape>,
     pub node_id_to_index_map: HashMap<Uuid, NodeIndex>,
 }
 
@@ -109,7 +109,7 @@ impl NetworkGraph {
             crate::network::edge::Edge,
             Directed,
             DefaultIx,
-            MyNodeShape,
+            NetworkGraphNodeShape,
             _,
         > = egui_graphs::to_graph(&graph);
 
@@ -124,7 +124,7 @@ impl NetworkGraph {
                 crate::network::edge::Edge,
                 Directed,
                 DefaultIx,
-                MyNodeShape,
+                NetworkGraphNodeShape,
             > = if let Some(node) = graph.node_mut(index) {
                 node
             } else {
@@ -419,7 +419,7 @@ impl ToString for NetworkGraph {
         // Collect nodes with indices for deterministic ordering (Routers first, then Networks, then by identifier)
         let mut nodes: Vec<(
             NodeIndex,
-            &egui_graphs::Node<Node, Edge, Directed, DefaultIx, MyNodeShape>,
+            &egui_graphs::Node<Node, Edge, Directed, DefaultIx, NetworkGraphNodeShape>,
         )> = self.graph.nodes_iter().collect();
         nodes.sort_by(|(_, a), (_, b)| {
             let ta = match &a.payload().info {

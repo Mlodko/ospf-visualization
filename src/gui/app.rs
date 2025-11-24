@@ -9,7 +9,7 @@ use crate::topology::source::SnapshotSource;
 use crate::topology::store::TopologyStore;
 use crate::{
     gui::node_shape::{
-        LabelOverlay, MyNodeShape, clear_area_highlight, clear_label_overlays,
+        LabelOverlay, NetworkGraphNodeShape, clear_area_highlight, clear_label_overlays,
         partition_highlight_enabled, set_partition_highlight_enabled, take_label_overlays,
     },
     network::{network_graph::NetworkGraph, node::Node},
@@ -100,12 +100,14 @@ impl App {
         let mut store = TopologyStore::default();
 
         // First snapshot: replace partition and build union (live-only)
+        /*
         let now = Instant::now();
         let (src, nodes) = topo
             .fetch_snapshot()
             .await
             .map_err(|e| RuntimeError::TopologyFetchError(e.to_string()))?;
         store.replace_partition(src, nodes, now);
+        */
 
         let merged: Vec<Node> = store.build_merged_view(true);
         let graph = NetworkGraph::build_new(merged);
@@ -114,7 +116,7 @@ impl App {
         Ok(Self {
             topo,
             store,
-            live_view_only: true,
+            live_view_only: false,
             graph,
 
             selected_node: Option::default(),
@@ -139,6 +141,7 @@ impl App {
     fn render(&mut self, ctx: &Context) {
         let render_side_panel = |ui: &mut Ui| {
             // Live vs merged toggle
+            /*
             if ui
                 .checkbox(
                     &mut self.live_view_only,
@@ -150,6 +153,7 @@ impl App {
                 let merged = self.store.build_merged_view(self.live_view_only);
                 self.graph = NetworkGraph::build_new(merged);
             }
+            */
 
             let mut highlight_enabled = partition_highlight_enabled();
             if ui
@@ -285,7 +289,7 @@ impl App {
                 crate::network::edge::Edge,
                 Directed,
                 DefaultIx,
-                MyNodeShape,
+                NetworkGraphNodeShape,
                 DefaultEdgeShape,
                 LayoutState,
                 LayoutForceDirected<Layout>,

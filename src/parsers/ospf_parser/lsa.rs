@@ -258,7 +258,7 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
         protocol_data: Some(protocol_data),
         // Attach the originating ABR so the summary network is connected;
         // later consolidation will fold this into a detailed Type-2 if present.
-        attached_routers: vec![RouterId::Ipv4(lsa.router_id)],
+        attached_routers: vec![], //vec![RouterId::Ipv4(lsa.router_id)],
     })
 }
 

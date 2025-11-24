@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::net::Ipv4Addr;
 
 use snmp2::{Oid, Value};
