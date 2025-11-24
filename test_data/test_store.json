@@ -1,0 +1,823 @@
+{
+  "sources": {
+    "172.21.0.1": {
+      "health": "Connected",
+      "partition": {
+        "nodes": {
+          "62d75015-d189-5618-b756-8bd562aa6fe2": {
+            "info": {
+              "Network": {
+                "ip_address": "172.21.123.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "172.21.123.3",
+                    "advertising_router": "172.21.0.3",
+                    "checksum": 2804,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": "172.21.123.3",
+                        "summaries": [],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "NetworkLinks",
+                    "lsa_hex": "00010202ac157b03ac150003800000080af40024ffffff00ac150002ac150003ac150001"
+                  }
+                },
+                "attached_routers": [
+                  "172.21.0.2",
+                  "172.21.0.3",
+                  "172.21.0.1"
+                ]
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "62d75015-d189-5618-b756-8bd562aa6fe2"
+          },
+          "cb84d575-3dec-5a6d-9252-5798bd5711fa": {
+            "info": {
+              "Router": {
+                "id": "172.21.45.5",
+                "interfaces": [
+                  "172.21.45.5"
+                ],
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "172.21.45.5",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 35812,
+                    "payload": {
+                      "Router": {
+                        "is_abr": true,
+                        "is_asbr": false,
+                        "is_virtual_link_endpoint": false,
+                        "is_nssa_capable": false,
+                        "p2p_link_count": 0,
+                        "transit_link_count": 1,
+                        "stub_link_count": 0,
+                        "link_metrics": {
+                          "172.21.45.5": 10
+                        },
+                        "per_area_facets": [
+                          {
+                            "area_id": "0.0.0.1",
+                            "p2p_link_count": 0,
+                            "transit_link_count": 1,
+                            "stub_link_count": 0
+                          }
+                        ],
+                        "virtual_links": []
+                      }
+                    },
+                    "lsa_kind": "RouterLinks",
+                    "lsa_hex": "00020201ac152d05ac152d058000000a8be4002401000001ac152d05ac152d050200000a"
+                  }
+                }
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "cb84d575-3dec-5a6d-9252-5798bd5711fa"
+          },
+          "26b1296a-d160-5a6a-8c9c-3359b1bc3946": {
+            "info": {
+              "Network": {
+                "ip_address": "10.0.67.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "10.0.67.0",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 44117,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": null,
+                        "summaries": [
+                          {
+                            "metric": 20,
+                            "origin_abr": "172.21.45.5"
+                          }
+                        ],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "SummaryLinkIpNetwork",
+                    "lsa_hex": "000202030a004300ac152d0580000007ac55001cffffff0000000014"
+                  }
+                },
+                "attached_routers": []
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "26b1296a-d160-5a6a-8c9c-3359b1bc3946"
+          },
+          "dca7c5a5-366f-5c8b-a4ea-25c8e8375af4": {
+            "info": {
+              "Network": {
+                "ip_address": "172.22.78.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "172.22.78.0",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 19687,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": null,
+                        "summaries": [
+                          {
+                            "metric": 30,
+                            "origin_abr": "172.21.45.5"
+                          }
+                        ],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "SummaryLinkIpNetwork",
+                    "lsa_hex": "00020203ac164e00ac152d05800000074ce7001cffffff000000001e"
+                  }
+                },
+                "attached_routers": []
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "dca7c5a5-366f-5c8b-a4ea-25c8e8375af4"
+          },
+          "95dff25a-9c61-5d84-b2d8-15eacaa3fd06": {
+            "info": {
+              "Router": {
+                "id": "172.21.0.1",
+                "interfaces": [
+                  "172.21.123.11",
+                  "172.21.14.11"
+                ],
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "172.21.0.1",
+                    "advertising_router": "172.21.0.1",
+                    "checksum": 23563,
+                    "payload": {
+                      "Router": {
+                        "is_abr": false,
+                        "is_asbr": false,
+                        "is_virtual_link_endpoint": false,
+                        "is_nssa_capable": false,
+                        "p2p_link_count": 0,
+                        "transit_link_count": 2,
+                        "stub_link_count": 0,
+                        "link_metrics": {
+                          "172.21.14.11": 10,
+                          "172.21.123.11": 10
+                        },
+                        "per_area_facets": [
+                          {
+                            "area_id": "0.0.0.1",
+                            "p2p_link_count": 0,
+                            "transit_link_count": 2,
+                            "stub_link_count": 0
+                          }
+                        ],
+                        "virtual_links": []
+                      }
+                    },
+                    "lsa_kind": "RouterLinks",
+                    "lsa_hex": "00000201ac150001ac1500018000000e5c0b003000000002ac157b03ac157b0b0200000aac150e04ac150e0b0200000a"
+                  }
+                }
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "95dff25a-9c61-5d84-b2d8-15eacaa3fd06"
+          },
+          "1500a360-a0e0-50c3-aa01-c1a355b81733": {
+            "info": {
+              "Network": {
+                "ip_address": "10.0.56.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "10.0.56.0",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 49493,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": null,
+                        "summaries": [
+                          {
+                            "metric": 10,
+                            "origin_abr": "172.21.45.5"
+                          }
+                        ],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "SummaryLinkIpNetwork",
+                    "lsa_hex": "000202030a003800ac152d0580000007c155001cffffff000000000a"
+                  }
+                },
+                "attached_routers": []
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "1500a360-a0e0-50c3-aa01-c1a355b81733"
+          },
+          "b58c1c6f-1242-5bdd-807e-5ed4f6c26b05": {
+            "info": {
+              "Router": {
+                "id": "172.21.0.3",
+                "interfaces": [
+                  "172.21.123.3"
+                ],
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "172.21.0.3",
+                    "advertising_router": "172.21.0.3",
+                    "checksum": 24790,
+                    "payload": {
+                      "Router": {
+                        "is_abr": false,
+                        "is_asbr": false,
+                        "is_virtual_link_endpoint": false,
+                        "is_nssa_capable": false,
+                        "p2p_link_count": 0,
+                        "transit_link_count": 1,
+                        "stub_link_count": 0,
+                        "link_metrics": {
+                          "172.21.123.3": 10
+                        },
+                        "per_area_facets": [
+                          {
+                            "area_id": "0.0.0.1",
+                            "p2p_link_count": 0,
+                            "transit_link_count": 1,
+                            "stub_link_count": 0
+                          }
+                        ],
+                        "virtual_links": []
+                      }
+                    },
+                    "lsa_kind": "RouterLinks",
+                    "lsa_hex": "00010201ac150003ac1500038000000a60d6002400000001ac157b03ac157b030200000a"
+                  }
+                }
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "b58c1c6f-1242-5bdd-807e-5ed4f6c26b05"
+          },
+          "6018ecef-d6be-5d56-b725-97b694be08c0": {
+            "info": {
+              "Network": {
+                "ip_address": "172.21.45.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "172.21.45.5",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 32039,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": "172.21.45.5",
+                        "summaries": [],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "NetworkLinks",
+                    "lsa_hex": "00020202ac152d05ac152d05800000077d270020ffffff00ac150e04ac152d05"
+                  }
+                },
+                "attached_routers": [
+                  "172.21.14.4",
+                  "172.21.45.5"
+                ]
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "6018ecef-d6be-5d56-b725-97b694be08c0"
+          },
+          "95fdd0b0-703c-5d59-a0b8-f19110fc7e68": {
+            "info": {
+              "Router": {
+                "id": "172.21.14.4",
+                "interfaces": [
+                  "172.21.14.4",
+                  "172.21.45.4"
+                ],
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "172.21.14.4",
+                    "advertising_router": "172.21.14.4",
+                    "checksum": 27269,
+                    "payload": {
+                      "Router": {
+                        "is_abr": false,
+                        "is_asbr": false,
+                        "is_virtual_link_endpoint": false,
+                        "is_nssa_capable": false,
+                        "p2p_link_count": 0,
+                        "transit_link_count": 2,
+                        "stub_link_count": 0,
+                        "link_metrics": {
+                          "172.21.45.4": 10,
+                          "172.21.14.4": 10
+                        },
+                        "per_area_facets": [
+                          {
+                            "area_id": "0.0.0.1",
+                            "p2p_link_count": 0,
+                            "transit_link_count": 2,
+                            "stub_link_count": 0
+                          }
+                        ],
+                        "virtual_links": []
+                      }
+                    },
+                    "lsa_kind": "RouterLinks",
+                    "lsa_hex": "00010201ac150e04ac150e048000000c6a85003000000002ac150e04ac150e040200000aac152d05ac152d040200000a"
+                  }
+                }
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "95fdd0b0-703c-5d59-a0b8-f19110fc7e68"
+          },
+          "a828b733-997f-5cab-becd-910a6826aa3d": {
+            "info": {
+              "Network": {
+                "ip_address": "172.21.14.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "172.21.14.4",
+                    "advertising_router": "172.21.14.4",
+                    "checksum": 15067,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": "172.21.14.4",
+                        "summaries": [],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "NetworkLinks",
+                    "lsa_hex": "00010202ac150e04ac150e04800000073adb0020ffffff00ac150e04ac150001"
+                  }
+                },
+                "attached_routers": [
+                  "172.21.14.4",
+                  "172.21.0.1"
+                ]
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "a828b733-997f-5cab-becd-910a6826aa3d"
+          },
+          "41e5203a-eac4-5cae-bf47-76066ea8852c": {
+            "info": {
+              "Router": {
+                "id": "172.21.0.2",
+                "interfaces": [
+                  "172.21.123.2"
+                ],
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.1",
+                    "link_state_id": "172.21.0.2",
+                    "advertising_router": "172.21.0.2",
+                    "checksum": 24792,
+                    "payload": {
+                      "Router": {
+                        "is_abr": false,
+                        "is_asbr": false,
+                        "is_virtual_link_endpoint": false,
+                        "is_nssa_capable": false,
+                        "p2p_link_count": 0,
+                        "transit_link_count": 1,
+                        "stub_link_count": 0,
+                        "link_metrics": {
+                          "172.21.123.2": 10
+                        },
+                        "per_area_facets": [
+                          {
+                            "area_id": "0.0.0.1",
+                            "p2p_link_count": 0,
+                            "transit_link_count": 1,
+                            "stub_link_count": 0
+                          }
+                        ],
+                        "virtual_links": []
+                      }
+                    },
+                    "lsa_kind": "RouterLinks",
+                    "lsa_hex": "00010201ac150002ac1500028000000b60d8002400000001ac157b03ac157b020200000a"
+                  }
+                }
+              }
+            },
+            "label": null,
+            "source_id": "172.21.0.1",
+            "id": "41e5203a-eac4-5cae-bf47-76066ea8852c"
+          }
+        }
+      },
+      "last_snapshot": {
+        "secs_since_epoch": 1764011173,
+        "nanos_since_epoch": 668651929
+      },
+      "last_connected": {
+        "secs_since_epoch": 1764011173,
+        "nanos_since_epoch": 668651929
+      },
+      "last_status_change": {
+        "secs_since_epoch": 1764011173,
+        "nanos_since_epoch": 668651929
+      }
+    },
+    "10.0.56.6": {
+      "health": "Connected",
+      "partition": {
+        "nodes": {
+          "ea639b3e-3d98-5f5c-b3d5-07fd9cee8ec3": {
+            "info": {
+              "Router": {
+                "id": "10.0.67.7",
+                "interfaces": [
+                  "10.0.67.7"
+                ],
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.0",
+                    "link_state_id": "10.0.67.7",
+                    "advertising_router": "10.0.67.7",
+                    "checksum": 32368,
+                    "payload": {
+                      "Router": {
+                        "is_abr": true,
+                        "is_asbr": false,
+                        "is_virtual_link_endpoint": false,
+                        "is_nssa_capable": false,
+                        "p2p_link_count": 0,
+                        "transit_link_count": 1,
+                        "stub_link_count": 0,
+                        "link_metrics": {
+                          "10.0.67.7": 10
+                        },
+                        "per_area_facets": [
+                          {
+                            "area_id": "0.0.0.0",
+                            "p2p_link_count": 0,
+                            "transit_link_count": 1,
+                            "stub_link_count": 0
+                          }
+                        ],
+                        "virtual_links": []
+                      }
+                    },
+                    "lsa_kind": "RouterLinks",
+                    "lsa_hex": "000102010a0043070a0043078000000a7e700024010000010a0043070a0043070200000a"
+                  }
+                }
+              }
+            },
+            "label": null,
+            "source_id": "10.0.56.6",
+            "id": "ea639b3e-3d98-5f5c-b3d5-07fd9cee8ec3"
+          },
+          "1500a360-a0e0-50c3-aa01-c1a355b81733": {
+            "info": {
+              "Network": {
+                "ip_address": "10.0.56.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.0",
+                    "link_state_id": "10.0.56.5",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 2515,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": "10.0.56.5",
+                        "summaries": [],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "NetworkLinks",
+                    "lsa_hex": "000102020a003805ac152d058000000709d30020ffffff00ac152d050a003806"
+                  }
+                },
+                "attached_routers": [
+                  "172.21.45.5",
+                  "10.0.56.6"
+                ]
+              }
+            },
+            "label": null,
+            "source_id": "10.0.56.6",
+            "id": "1500a360-a0e0-50c3-aa01-c1a355b81733"
+          },
+          "26b1296a-d160-5a6a-8c9c-3359b1bc3946": {
+            "info": {
+              "Network": {
+                "ip_address": "10.0.67.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.0",
+                    "link_state_id": "10.0.67.7",
+                    "advertising_router": "10.0.67.7",
+                    "checksum": 9705,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": "10.0.67.7",
+                        "summaries": [],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "NetworkLinks",
+                    "lsa_hex": "000102020a0043070a0043078000000725e90020ffffff000a0038060a004307"
+                  }
+                },
+                "attached_routers": [
+                  "10.0.56.6",
+                  "10.0.67.7"
+                ]
+              }
+            },
+            "label": null,
+            "source_id": "10.0.56.6",
+            "id": "26b1296a-d160-5a6a-8c9c-3359b1bc3946"
+          },
+          "bbe4a22e-891c-564d-9065-b2d01d394d31": {
+            "info": {
+              "Router": {
+                "id": "10.0.56.6",
+                "interfaces": [
+                  "10.0.56.6",
+                  "10.0.67.6"
+                ],
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.0",
+                    "link_state_id": "10.0.56.6",
+                    "advertising_router": "10.0.56.6",
+                    "checksum": 44464,
+                    "payload": {
+                      "Router": {
+                        "is_abr": false,
+                        "is_asbr": false,
+                        "is_virtual_link_endpoint": false,
+                        "is_nssa_capable": false,
+                        "p2p_link_count": 0,
+                        "transit_link_count": 2,
+                        "stub_link_count": 0,
+                        "link_metrics": {
+                          "10.0.56.6": 10,
+                          "10.0.67.6": 10
+                        },
+                        "per_area_facets": [
+                          {
+                            "area_id": "0.0.0.0",
+                            "p2p_link_count": 0,
+                            "transit_link_count": 2,
+                            "stub_link_count": 0
+                          }
+                        ],
+                        "virtual_links": []
+                      }
+                    },
+                    "lsa_kind": "RouterLinks",
+                    "lsa_hex": "000002010a0038060a0038068000000cadb00030000000020a0038050a0038060200000a0a0043070a0043060200000a"
+                  }
+                }
+              }
+            },
+            "label": null,
+            "source_id": "10.0.56.6",
+            "id": "bbe4a22e-891c-564d-9065-b2d01d394d31"
+          },
+          "a828b733-997f-5cab-becd-910a6826aa3d": {
+            "info": {
+              "Network": {
+                "ip_address": "172.21.14.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.0",
+                    "link_state_id": "172.21.14.0",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 46792,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": null,
+                        "summaries": [
+                          {
+                            "metric": 20,
+                            "origin_abr": "172.21.45.5"
+                          }
+                        ],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "SummaryLinkIpNetwork",
+                    "lsa_hex": "00010203ac150e00ac152d0580000007b6c8001cffffff0000000014"
+                  }
+                },
+                "attached_routers": []
+              }
+            },
+            "label": null,
+            "source_id": "10.0.56.6",
+            "id": "a828b733-997f-5cab-becd-910a6826aa3d"
+          },
+          "6018ecef-d6be-5d56-b725-97b694be08c0": {
+            "info": {
+              "Network": {
+                "ip_address": "172.21.45.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.0",
+                    "link_state_id": "172.21.45.0",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 64366,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": null,
+                        "summaries": [
+                          {
+                            "metric": 10,
+                            "origin_abr": "172.21.45.5"
+                          }
+                        ],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "SummaryLinkIpNetwork",
+                    "lsa_hex": "00010203ac152d00ac152d0580000007fb6e001cffffff000000000a"
+                  }
+                },
+                "attached_routers": []
+              }
+            },
+            "label": null,
+            "source_id": "10.0.56.6",
+            "id": "6018ecef-d6be-5d56-b725-97b694be08c0"
+          },
+          "cb84d575-3dec-5a6d-9252-5798bd5711fa": {
+            "info": {
+              "Router": {
+                "id": "172.21.45.5",
+                "interfaces": [
+                  "10.0.56.5"
+                ],
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.0",
+                    "link_state_id": "172.21.45.5",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 26976,
+                    "payload": {
+                      "Router": {
+                        "is_abr": true,
+                        "is_asbr": false,
+                        "is_virtual_link_endpoint": false,
+                        "is_nssa_capable": false,
+                        "p2p_link_count": 0,
+                        "transit_link_count": 1,
+                        "stub_link_count": 0,
+                        "link_metrics": {
+                          "10.0.56.5": 10
+                        },
+                        "per_area_facets": [
+                          {
+                            "area_id": "0.0.0.0",
+                            "p2p_link_count": 0,
+                            "transit_link_count": 1,
+                            "stub_link_count": 0
+                          }
+                        ],
+                        "virtual_links": []
+                      }
+                    },
+                    "lsa_kind": "RouterLinks",
+                    "lsa_hex": "00010201ac152d05ac152d058000000a69600024010000010a0038050a0038050200000a"
+                  }
+                }
+              }
+            },
+            "label": null,
+            "source_id": "10.0.56.6",
+            "id": "cb84d575-3dec-5a6d-9252-5798bd5711fa"
+          },
+          "dca7c5a5-366f-5c8b-a4ea-25c8e8375af4": {
+            "info": {
+              "Network": {
+                "ip_address": "172.22.78.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.0",
+                    "link_state_id": "172.22.78.0",
+                    "advertising_router": "10.0.67.7",
+                    "checksum": 15786,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": null,
+                        "summaries": [
+                          {
+                            "metric": 10,
+                            "origin_abr": "10.0.67.7"
+                          }
+                        ],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "SummaryLinkIpNetwork",
+                    "lsa_hex": "00010203ac164e000a004307800000073daa001cffffff000000000a"
+                  }
+                },
+                "attached_routers": []
+              }
+            },
+            "label": null,
+            "source_id": "10.0.56.6",
+            "id": "dca7c5a5-366f-5c8b-a4ea-25c8e8375af4"
+          },
+          "62d75015-d189-5618-b756-8bd562aa6fe2": {
+            "info": {
+              "Network": {
+                "ip_address": "172.21.123.0/24",
+                "protocol_data": {
+                  "Ospf": {
+                    "version": 1,
+                    "area_id": "0.0.0.0",
+                    "link_state_id": "172.21.123.0",
+                    "advertising_router": "172.21.45.5",
+                    "checksum": 26528,
+                    "payload": {
+                      "Network": {
+                        "designated_router_id": null,
+                        "summaries": [
+                          {
+                            "metric": 30,
+                            "origin_abr": "172.21.45.5"
+                          }
+                        ],
+                        "externals": []
+                      }
+                    },
+                    "lsa_kind": "SummaryLinkIpNetwork",
+                    "lsa_hex": "00010203ac157b00ac152d058000000767a0001cffffff000000001e"
+                  }
+                },
+                "attached_routers": []
+              }
+            },
+            "label": null,
+            "source_id": "10.0.56.6",
+            "id": "62d75015-d189-5618-b756-8bd562aa6fe2"
+          }
+        }
+      },
+      "last_snapshot": {
+        "secs_since_epoch": 1764011195,
+        "nanos_since_epoch": 652024290
+      },
+      "last_connected": {
+        "secs_since_epoch": 1764011195,
+        "nanos_since_epoch": 652024290
+      },
+      "last_status_change": {
+        "secs_since_epoch": 1764011195,
+        "nanos_since_epoch": 652024290
+      }
+    }
+  }
+}

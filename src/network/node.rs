@@ -184,7 +184,7 @@ impl From<&OspfLinkStateAdvertisement> for SerializableOspfLsaType {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct OspfDataWire {
-    pub version: u32, // Increment this after each change, currently 1
+    pub version: u32, // Increment in Serialize impl this after each change, currently 2
     pub area_id: Ipv4Addr,
     pub link_state_id: Ipv4Addr,
     pub advertising_router: Ipv4Addr,
@@ -202,7 +202,7 @@ impl Serialize for OspfData {
             let lsa_hex = hex::encode(self.raw_lsa_bytes.as_ref());
             
             let mut st = serializer.serialize_struct("OspfData", 8)?;
-            st.serialize_field("version", &1u32)?;
+            st.serialize_field("version", &2u32)?; // CHANGE HERE
             st.serialize_field("area_id", &self.area_id)?;
             st.serialize_field("link_state_id", &self.link_state_id)?;
             st.serialize_field("advertising_router", &self.advertising_router)?;

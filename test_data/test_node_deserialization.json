@@ -1,20 +1,18 @@
 {
   "info": {
     "Router": {
-      "id": {
-        "Ipv4": "172.21.0.1"
-      },
+      "id": "172.21.0.1",
       "interfaces": [
         "172.21.123.11",
         "172.21.14.11"
       ],
       "protocol_data": {
         "Ospf": {
-          "version": 1,
+          "version": 2,
           "area_id": "0.0.0.1",
           "link_state_id": "172.21.0.1",
           "advertising_router": "172.21.0.1",
-          "checksum": 25607,
+          "checksum": 23052,
           "payload": {
             "Router": {
               "is_abr": false,
@@ -25,8 +23,8 @@
               "transit_link_count": 2,
               "stub_link_count": 0,
               "link_metrics": {
-                "172.21.14.11": 10,
-                "172.21.123.11": 10
+                "172.21.123.11": 10,
+                "172.21.14.11": 10
               },
               "per_area_facets": [
                 {
@@ -40,14 +38,12 @@
             }
           },
           "lsa_kind": "RouterLinks",
-          "lsa_hex": "00000201ac150001ac1500018000000a6407003000000002ac157b03ac157b0b0200000aac150e04ac150e0b0200000a"
+          "lsa_hex": "00000201ac150001ac1500018000000f5a0c003000000002ac157b03ac157b0b0200000aac150e04ac150e0b0200000a"
         }
       }
     }
   },
   "label": null,
-  "source_id": {
-    "Ipv4": "172.21.0.1"
-  },
+  "source_id": "172.21.0.1",
   "id": "95dff25a-9c61-5d84-b2d8-15eacaa3fd06"
 }

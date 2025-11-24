@@ -751,5 +751,84 @@ fn classify_network_kind(node: &Node) -> NetKind {
 
 mod tests {
     use super::*;
-
+    
+    #[test]
+    fn test_store_deserialization() {
+        let json = include_str!("../../test_data/test_store.json");
+        
+        let store: TopologyStore = serde_json::from_str(json).unwrap();
+        
+        // Sources
+        let sources: Vec<_> = store.sources.keys().collect();
+        let expected_sources = [
+            SourceId::Ipv4(Ipv4Addr::new(172, 21, 0, 1)),
+            SourceId::Ipv4(Ipv4Addr::new(10, 0, 56, 6))
+        ];
+        
+        assert_eq!(sources.len(), expected_sources.len());
+        
+        for expected in expected_sources.iter() {
+            assert!(sources.contains(&expected));
+        }
+        
+        // Nodes before merging
+        let node_uuids: Vec<_> = store.sources.values()
+            .flat_map(|source| 
+                source.partition.nodes.keys()
+                    .map(|uuid| uuid.to_string())
+            )
+            .collect();
+        let expected_uuids = [
+            // Source 172.21.0.1
+            "62d75015-d189-5618-b756-8bd562aa6fe2",
+            "cb84d575-3dec-5a6d-9252-5798bd5711fa",
+            "26b1296a-d160-5a6a-8c9c-3359b1bc3946",
+            "dca7c5a5-366f-5c8b-a4ea-25c8e8375af4",
+            "95dff25a-9c61-5d84-b2d8-15eacaa3fd06",
+            "1500a360-a0e0-50c3-aa01-c1a355b81733",
+            "b58c1c6f-1242-5bdd-807e-5ed4f6c26b05",
+            "6018ecef-d6be-5d56-b725-97b694be08c0",
+            "95fdd0b0-703c-5d59-a0b8-f19110fc7e68",
+            "a828b733-997f-5cab-becd-910a6826aa3d",
+            "41e5203a-eac4-5cae-bf47-76066ea8852c",
+            // Source 10.0.56.6
+            "ea639b3e-3d98-5f5c-b3d5-07fd9cee8ec3",
+            "1500a360-a0e0-50c3-aa01-c1a355b81733",
+            "26b1296a-d160-5a6a-8c9c-3359b1bc3946",
+            "bbe4a22e-891c-564d-9065-b2d01d394d31",
+            "a828b733-997f-5cab-becd-910a6826aa3d",
+            "6018ecef-d6be-5d56-b725-97b694be08c0",
+            "cb84d575-3dec-5a6d-9252-5798bd5711fa",
+            "dca7c5a5-366f-5c8b-a4ea-25c8e8375af4",
+            "62d75015-d189-5618-b756-8bd562aa6fe2",
+        ];
+        
+        assert_eq!(node_uuids.len(), expected_uuids.len());
+        for expected in expected_uuids {
+            assert!(node_uuids.contains(&expected.to_string()))
+        }
+        
+        // Nodes after merging
+        let merged_uuids: Vec<_> = store.build_merged_view(false).iter().map(|node| node.id.to_string()).collect();
+        let expected_merged_uuids = [
+            "95dff25a-9c61-5d84-b2d8-15eacaa3fd06",
+            "a828b733-997f-5cab-becd-910a6826aa3d",
+            "6018ecef-d6be-5d56-b725-97b694be08c0",
+            "95fdd0b0-703c-5d59-a0b8-f19110fc7e68",
+            "26b1296a-d160-5a6a-8c9c-3359b1bc3946",
+            "1500a360-a0e0-50c3-aa01-c1a355b81733",
+            "62d75015-d189-5618-b756-8bd562aa6fe2",
+            "41e5203a-eac4-5cae-bf47-76066ea8852c",
+            "dca7c5a5-366f-5c8b-a4ea-25c8e8375af4",
+            "b58c1c6f-1242-5bdd-807e-5ed4f6c26b05",
+            "cb84d575-3dec-5a6d-9252-5798bd5711fa",
+            "bbe4a22e-891c-564d-9065-b2d01d394d31",
+            "ea639b3e-3d98-5f5c-b3d5-07fd9cee8ec3"
+        ];
+        
+        assert_eq!(merged_uuids.len(), expected_merged_uuids.len());
+        for expected in expected_merged_uuids {
+            assert!(merged_uuids.contains(&expected.to_string()))
+        }
+    }
 }

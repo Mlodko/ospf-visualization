@@ -4,7 +4,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize, de::Error};
-use uuid::{Uuid, serde::compact::deserialize};
+use uuid::Uuid;
 
 use crate::network::node::ProtocolData;
 

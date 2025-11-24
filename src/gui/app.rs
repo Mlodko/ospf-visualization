@@ -362,6 +362,14 @@ impl App {
                 println!("[app] Pressed try build graph from store and print button");
                 println!("Fresh {}", graph.to_string())
             }
+            if ui.button("Print all node uuids").clicked() {
+                println!("[app] Pressed print all node uuids button");
+                for node in self.graph.graph.nodes_iter() {
+                    let node = node.1.payload();
+                    println!("{}", node.id);
+                }
+            }
+            
             ui.collapsing("egui debug", |ui| {
                 // Clone, edit via built-in UI, then apply:
                 let mut style = (*ctx.style()).clone();
