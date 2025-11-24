@@ -226,7 +226,7 @@ impl TopologyStore {
         let mut networks_by_prefix: HashMap<IpNetwork, Vec<Node>> = HashMap::new();
 
         for (src_id, state) in &self.sources {
-            if config.connected_only && state.health != SourceHealth::Connected && config.is_source_enabled(src_id) {
+            if (config.connected_only && state.health != SourceHealth::Connected) || !config.is_source_enabled(src_id) {
                 continue;
             }
 

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::{sync::Arc, time::Instant};
 
 use crate::gui::node_panel::{
@@ -18,7 +19,7 @@ use crate::{
     topology::OspfSnmpTopology,
 };
 use eframe::egui;
-use egui::{CentralPanel, CollapsingHeader, Context, Id, Separator, SidePanel, Ui};
+use egui::{CentralPanel, Checkbox, CollapsingHeader, Context, Id, Separator, SidePanel, Ui};
 use egui_extras::{Column, TableBuilder};
 use egui_graphs::{
     DefaultEdgeShape, FruchtermanReingoldWithCenterGravity,
@@ -163,6 +164,10 @@ impl App {
                         rows.sort_by(|this, other| this.3.cmp(&other.3));
                         
                         let mut sources_to_remove: Vec<SourceId> = Vec::new();
+                        let mut source_enable_states: HashMap<SourceId, bool> = rows.iter().map(|(src_id, _, _, _)| {
+                            let enabled = self.merge_config.is_source_enabled(src_id);
+                            (src_id.clone(), enabled)
+                        }).collect();
                         
                         let table = TableBuilder::new(ui)
                             .striped(true)
@@ -171,7 +176,8 @@ impl App {
                             .column(Column::auto().at_least(70.0))
                             .column(Column::auto().at_least(55.0))
                             .column(Column::auto().at_least(145.0))
-                            .column(Column::auto().at_least(55.0));
+                            .column(Column::auto().at_least(55.0))
+                            .column(Column::auto().at_least(20.0));
                         
                         table
                             .header(20.0, |mut header| {
@@ -180,6 +186,7 @@ impl App {
                                 header.col(|ui| { ui.strong("#Nodes"); });
                                 header.col(|ui| { ui.strong("Last snapshot (s)"); });
                                 header.col(|ui| { ui.strong("Actions"); });
+                                header.col(|ui| { ui.strong("Enabled"); });
                             })
                             .body(|mut body| {
                                 for (src_id, health, nodes_count, last_snapshot) in rows {
@@ -199,18 +206,39 @@ impl App {
                                                 }
                                             });
                                         });
+                                        row.col(|ui| {
+                                            ui.add(Checkbox::without_text(&mut source_enable_states.get_mut(&src_id).unwrap()));
+                                        });
                                     })
                                 }
                             });
                         
                         if !sources_to_remove.is_empty() {
-                            for src_id in sources_to_remove {
-                                if let Err(e) = self.store.remove_partition(&src_id) {
+                            for src_id in sources_to_remove.iter() {
+                                if let Err(e) = self.store.remove_partition(src_id) {
                                     eprintln!("Failed to remove partition: {}", e);
-                                } else {
-                                    // Source removed, reload graph
-                                    self.reload_graph();
                                 }
+                            }
+                        }
+                        
+                        let sources_enable_state_changed: Vec<_> = source_enable_states.into_iter().filter_map(|(src_id, enabled)| {
+                            if enabled != self.merge_config.is_source_enabled(&src_id) {
+                                Some((src_id, enabled))
+                            } else {
+                                None
+                            }
+                        }).collect();
+                        
+                        for (src_id, enabled) in sources_enable_state_changed.iter() {
+                            println!("Toggling source {} to {}", src_id, enabled);
+                            self.merge_config.toggle_source(src_id);
+                            println!("New state: {}", self.merge_config.is_source_enabled(src_id))
+                        }
+                        
+                        // There's been some change, reload
+                        if !sources_enable_state_changed.is_empty() || !sources_to_remove.is_empty() {
+                            if let Err(e) = self.reload_graph() {
+                                eprintln!("Failed to reload graph: {}", e);
                             }
                         }
                         
