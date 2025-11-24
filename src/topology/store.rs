@@ -9,10 +9,10 @@ This module defines:
 - `SourceState`: Holds information about a source, as well as the partition it manages.
 */
 
-use crate::network::{
+use crate::{network::{
     node::{Node, NodeInfo, OspfNetworkPayload, OspfPayload, PerAreaRouterFacet, ProtocolData},
     router::RouterId,
-};
+}, topology::{ospf_protocol::OspfFederator, protocol::{FederationError, ProtocolFederator}}};
 use ipnetwork::IpNetwork;
 use ospf_parser::OspfLinkStateAdvertisement;
 use serde::{Deserialize, Serialize};
@@ -431,47 +431,122 @@ impl TopologyStore {
         fused_node
     }
 
-    pub fn build_merged_view(&self, connected_only: bool) -> Vec<Node> {
-        let mut out = Vec::new();
-        let buckets = self.detect_router_duplicates(connected_only);
-        let duplicate_router_uuids: HashSet<Uuid> = buckets.iter().map(|b| b.router_uuid).collect();
+    pub fn build_merged_view(&self, connected_only: bool) -> Vec<Node> {      
+        let ospf_federator = Box::new(OspfFederator::new());
         
-        let mut network_groups: HashMap<IpNetwork, Vec<Node>> = HashMap::new();
+        self.build_merged_view_with(connected_only, Some(ospf_federator)).unwrap()
         
-        // Handle non-duplicates first
-        let partitions = self
-            .sources
-            .iter()
-            .filter(|(_, src)| !connected_only || src.health == SourceHealth::Connected)
-            .map(|(_, src)| &src.partition);
+        // let mut out = Vec::new();
+        // let buckets = self.detect_router_duplicates(connected_only);
+        // let duplicate_router_uuids: HashSet<Uuid> = buckets.iter().map(|b| b.router_uuid).collect();
+        
+        // let mut network_groups: HashMap<IpNetwork, Vec<Node>> = HashMap::new();
+        
+        // // Handle non-duplicates first
+        // let partitions = self
+        //     .sources
+        //     .iter()
+        //     .filter(|(_, src)| !connected_only || src.health == SourceHealth::Connected)
+        //     .map(|(_, src)| &src.partition);
 
-        for partition in partitions {
-            for (node_uuid, node) in partition.nodes.iter() {
+        // for partition in partitions {
+        //     for (node_uuid, node) in partition.nodes.iter() {
+        //         match &node.info {
+        //             NodeInfo::Router(_) => {
+        //                 if !duplicate_router_uuids.contains(node_uuid) {
+        //                     out.push(node.clone());
+        //                 }
+        //             }
+        //             NodeInfo::Network(net) => {
+        //                 network_groups.entry(net.ip_address).or_default().push(node.clone());
+        //             }
+        //         }
+        //     }
+        // }
+
+        // // Now duplicates
+        // let fused_duplicate_routers = buckets.into_iter().map(TopologyStore::fuse_router_bucket);
+        // out.extend(fused_duplicate_routers);
+        
+        // for (_, group_nodes) in network_groups {
+        //     let fused = Self::fuse_network_group(group_nodes);
+        //     out.push(fused);
+        // }
+
+        // out
+    }
+    
+    pub fn build_merged_view_with(&self, connected_only: bool, federator: Option<Box<dyn ProtocolFederator>>) -> Result<Vec<Node>, FederationError> {
+        let mut routers_by_rid: HashMap<RouterId, Vec<Node>> = HashMap::new();
+        let mut networks_by_prefix: HashMap<IpNetwork, Vec<Node>> = HashMap::new();
+
+        for (_, state) in &self.sources {
+            if connected_only && state.health != SourceHealth::Connected {
+                continue;
+            }
+
+            for node in state.partition.nodes.values() {
                 match &node.info {
-                    NodeInfo::Router(_) => {
-                        if !duplicate_router_uuids.contains(node_uuid) {
-                            out.push(node.clone());
-                        }
+                    NodeInfo::Router(r) => {
+                        routers_by_rid.entry(r.id.clone()).or_default().push(node.clone());
                     }
                     NodeInfo::Network(net) => {
-                        network_groups.entry(net.ip_address).or_default().push(node.clone());
+                        networks_by_prefix.entry(net.ip_address).or_default().push(node.clone());
                     }
                 }
             }
         }
 
-        // Now duplicates
-        let fused_duplicate_routers = buckets.into_iter().map(TopologyStore::fuse_router_bucket);
-        out.extend(fused_duplicate_routers);
-        
-        for (_, group_nodes) in network_groups {
-            let fused = Self::fuse_network_group(group_nodes);
-            out.push(fused);
+        let mut out = Vec::new();
+
+        // Routers
+        for (_rid, facets) in routers_by_rid {
+            if let Some(f) = &federator {
+                match f.can_merge_router_facets(&facets) {
+                    Ok(()) => {
+                        out.push(f.merge_routers(&facets));
+                        continue;
+                    }
+                    Err(_e) => {
+                        // Fallback: select a representative facet
+                        out.push(Self::select_best_router(&facets));
+                        continue;
+                    }
+                }
+            }
+            out.push(Self::select_best_router(&facets));
         }
 
-        out
-    }
+        // Networks
+        for (_prefix, facets) in networks_by_prefix {
+            if let Some(f) = &federator {
+                match f.can_merge_network_facets(&facets) {
+                    Ok(()) => {
+                        out.push(f.merge_networks(&facets));
+                        continue; // IMPORTANT: prevent double insert
+                    }
+                    Err(_e) => {
+                        // Fallback if federation not applicable (stub synthetic, mixed protocol, etc.)
+                        out.push(Self::select_best_network(&facets));
+                        continue;
+                    }
+                }
+            }
+            out.push(Self::select_best_network(&facets));
+        }
 
+        Ok(out)
+    }
+    
+    fn select_best_router(facets: &[Node]) -> Node {
+        // For now return the first router
+        facets[0].clone()
+    }
+    
+    fn select_best_network(facets: &[Node]) -> Node {
+        facets[0].clone()
+    }
+    
     // Build merged view, dedupe by Node.id with explicit selection policy:
     // 1) prefer Connected over Lost
     // 2) if same, prefer newer last_snapshot
@@ -750,6 +825,7 @@ fn classify_network_kind(node: &Node) -> NetKind {
 }
 
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
     
     #[test]
@@ -809,7 +885,16 @@ mod tests {
         }
         
         // Nodes after merging
-        let merged_uuids: Vec<_> = store.build_merged_view(false).iter().map(|node| node.id.to_string()).collect();
+        
+    }
+    
+    #[test]
+    fn test_store_merging_logic() {
+        let json = include_str!("../../test_data/test_store.json");
+        let store: TopologyStore = serde_json::from_str(json).unwrap();
+        
+        let merged_nodes = store.build_merged_view(false);
+        let merged_uuids: Vec<_> = merged_nodes.iter().map(|node| node.id.to_string()).collect();
         let expected_merged_uuids = [
             "95dff25a-9c61-5d84-b2d8-15eacaa3fd06",
             "a828b733-997f-5cab-becd-910a6826aa3d",

@@ -1,18 +1,22 @@
+use std::collections::HashMap;
+
 use crate::{
     data_aquisition::snmp::SnmpClient,
     network::{
-        node::{Network as NetStruct, Node, NodeInfo, ProtocolData},
+        node::{Network as NetStruct, Node, NodeInfo, OspfPayload, PerAreaRouterFacet, ProtocolData},
         router::RouterId,
     },
     parsers::ospf_parser::{
         lsa::{LsaError, OspfLsdbEntry},
         source::{OspfDataSource, OspfRawRow},
     },
-    topology::protocol::{ProtocolParseError, ProtocolTopologyError},
+    topology::protocol::{FederationError, ProtocolFederator, ProtocolParseError, ProtocolTopologyError},
 };
 use async_trait::async_trait;
 
+use egui::ahash::HashSet;
 use ipnetwork::IpNetwork;
+use uuid::Uuid;
 
 /// Stateless OSPF protocol adapter. Parsing & node mapping are record-local;
 /// consolidation and augmentation (summary folding & stub synthesis) happen in `post_process`.
@@ -343,5 +347,245 @@ pub type OspfSnmpTopology = super::protocol::Topology<OspfProtocol, OspfSnmpAcqu
 impl OspfSnmpTopology {
     pub fn from_snmp_client(client: SnmpClient) -> Self {
         Self::new(OspfProtocol, OspfSnmpAcquisition::new(client))
+    }
+}
+
+
+
+pub struct OspfFederator;
+
+impl OspfFederator {
+    pub fn new() -> Self {
+        Self {}
+    }
+    
+    fn select_base<'a>(facets: &'a [Node]) -> &'a Node {
+        // Later: precedence by source health/timestamp.
+        // For now: first facet is base (already roughly deterministic).
+        &facets[0]
+    }
+    
+    fn check_router(node: &Node) -> Result<(), FederationError> {
+        match &node.info {
+            NodeInfo::Router(r) => {
+                let pd = r.protocol_data.as_ref().ok_or(FederationError::MixedProtocols)?;
+                match pd {
+                    ProtocolData::Ospf(odata) => {
+                        if let OspfPayload::Router(_) = &odata.payload {
+                            Ok(())
+                        } else {
+                            Err(FederationError::UnsupportedPayload)
+                        }
+                    }
+                    _ => Err(FederationError::MixedProtocols),
+                }
+            }
+            _ => Err(FederationError::MixedNodeKinds),
+        }
+    }
+
+    fn check_network(node: &Node) -> Result<(), FederationError> {
+        match &node.info {
+            NodeInfo::Network(n) => {
+                let pd = n.protocol_data.as_ref().ok_or(FederationError::MixedProtocols)?;
+                match pd {
+                    ProtocolData::Ospf(odata) => {
+                        if let OspfPayload::Network(_) = &odata.payload {
+                            Ok(())
+                        } else {
+                            Err(FederationError::UnsupportedPayload)
+                        }
+                    }
+                    _ => Err(FederationError::MixedProtocols),
+                }
+            }
+            _ => Err(FederationError::MixedNodeKinds),
+        }
+    }
+
+    fn all_same_router_id(facets: &[Node]) -> bool {
+        let mut iter = facets.iter().filter_map(|n| {
+            if let NodeInfo::Router(r) = &n.info {
+                Some(&r.id)
+            } else {
+                None
+            }
+        });
+        if let Some(first) = iter.next() {
+            iter.all(|id| id == first)
+        } else {
+            false
+        }
+    }
+
+    fn all_same_prefix(facets: &[Node]) -> bool {
+        let mut iter = facets.iter().filter_map(|n| {
+            if let NodeInfo::Network(net) = &n.info {
+                Some(net.ip_address)
+            } else {
+                None
+            }
+        });
+        if let Some(first) = iter.next() {
+            iter.all(|p| p == first)
+        } else {
+            false
+        }
+    }
+}
+
+
+
+impl ProtocolFederator for OspfFederator {
+    fn merge_routers(&self, facets: &[Node]) -> Node {
+        assert!(!facets.is_empty());
+        // Pick a base facet (clone it so we can mutate payload)
+        let mut base = Self::select_base(&facets).clone();
+
+        // Aggregate flags & link metrics across facets
+        let mut is_asbr = false;
+        let mut is_virtual = false;
+        let mut is_nssa = false;
+        let mut per_area: HashMap<std::net::Ipv4Addr, (usize, usize, usize)> = HashMap::new();
+        let mut link_metrics: HashMap<std::net::Ipv4Addr, u16> = HashMap::new();
+
+        for facet in facets {
+            if let NodeInfo::Router(r) = &facet.info {
+                if let Some(ProtocolData::Ospf(pd)) = &r.protocol_data {
+                    if let OspfPayload::Router(rp) = &pd.payload {
+                        is_asbr |= rp.is_asbr;
+                        is_virtual |= rp.is_virtual_link_endpoint;
+                        is_nssa |= rp.is_nssa_capable;
+                        for f in &rp.per_area_facets {
+                            let entry = per_area.entry(f.area_id).or_insert((0,0,0));
+                            entry.0 += f.p2p_link_count;
+                            entry.1 += f.transit_link_count;
+                            entry.2 += f.stub_link_count;
+                        }
+                        for (k,v) in &rp.link_metrics {
+                            link_metrics.insert(*k, *v); // last wins; refine if needed
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recompute totals
+        let (mut total_p2p, mut total_transit, mut total_stub) = (0usize, 0usize, 0usize);
+        for (_, (p2p, transit, stub)) in &per_area {
+            total_p2p += *p2p;
+            total_transit += *transit;
+            total_stub += *stub;
+        }
+
+        // Mutate base payload
+        if let NodeInfo::Router(r) = &mut base.info {
+            if let Some(ProtocolData::Ospf(pd)) = &mut r.protocol_data {
+                if let OspfPayload::Router(rp) = &mut pd.payload {
+                    rp.is_asbr = is_asbr;
+                    rp.is_virtual_link_endpoint = is_virtual;
+                    rp.is_nssa_capable = is_nssa;
+                    rp.is_abr = per_area.len() > 1;
+                    rp.p2p_link_count = total_p2p;
+                    rp.transit_link_count = total_transit;
+                    rp.stub_link_count = total_stub;
+                    rp.link_metrics = link_metrics;
+                    rp.per_area_facets = per_area.into_iter()
+                        .map(|(area_id,(p2p, transit, stub))| PerAreaRouterFacet {
+                            area_id, p2p_link_count: p2p, transit_link_count: transit, stub_link_count: stub
+                        })
+                        .collect();
+                }
+            }
+        }
+        base
+    }
+
+    fn merge_networks(&self, facets: &[Node]) -> Node {
+        assert!(!facets.is_empty());
+        // Partition by LSA kind (still needed if some sources only have Summary)
+        let mut detailed: Vec<Node> = Vec::new();
+        let mut summary: Vec<Node> = Vec::new();
+
+        for n in facets {
+            if let NodeInfo::Network(net) = &n.info {
+                if let Some(ProtocolData::Ospf(pd)) = &net.protocol_data {
+                    match *pd.advertisement {
+                        ospf_parser::OspfLinkStateAdvertisement::NetworkLinks(_) => detailed.push(n.clone()),
+                        ospf_parser::OspfLinkStateAdvertisement::SummaryLinkIpNetwork(_) => summary.push(n.clone()),
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Choose base: prefer any Detailed
+        let mut base = if !detailed.is_empty() {
+            detailed.remove(0)
+        } else {
+            summary.remove(0)
+        };
+
+        if let NodeInfo::Network(base_net) = &mut base.info {
+            // Union attached routers
+            let mut seen: HashSet<Uuid> =
+                base_net.attached_routers.iter().map(|r| r.to_uuidv5()).collect();
+            for extra in detailed.into_iter().chain(summary.into_iter()) {
+                if let NodeInfo::Network(net) = &extra.info {
+                    for rid in &net.attached_routers {
+                        let id = rid.to_uuidv5();
+                        if seen.insert(id) {
+                            base_net.attached_routers.push(rid.clone());
+                        }
+                    }
+                    // Merge summaries
+                    if let (Some(ProtocolData::Ospf(base_pd)), Some(ProtocolData::Ospf(extra_pd))) =
+                        (&mut base_net.protocol_data, &net.protocol_data)
+                    {
+                        if let (OspfPayload::Network(base_np), OspfPayload::Network(extra_np)) =
+                            (&mut base_pd.payload, &extra_pd.payload)
+                        {
+                            let mut sigs: HashSet<(u32, Uuid)> =
+                                base_np.summaries.iter().map(|s| (s.metric, s.origin_abr.to_uuidv5())).collect();
+                            for s in &extra_np.summaries {
+                                let sig = (s.metric, s.origin_abr.to_uuidv5());
+                                if sigs.insert(sig) {
+                                    base_np.summaries.push(s.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        base
+    }
+
+    fn can_merge_router_facets(&self, facets: &[Node]) -> Result<(), super::protocol::FederationError> {
+        if facets.is_empty() {
+            return Err(FederationError::EmptyFacets);
+        }
+        for facet in facets {
+            Self::check_router(facet)?;
+        }
+        if !Self::all_same_router_id(facets) {
+            // Reuse MixedProtocols would be misleading; pick UnsupportedPayload or add MixedIdentity variant later.
+            return Err(FederationError::MixedIdentity);
+        }
+        Ok(())
+    }
+
+    fn can_merge_network_facets(&self, facets: &[Node]) -> Result<(), super::protocol::FederationError> {
+        if facets.is_empty() {
+            return Err(FederationError::EmptyFacets);
+        }
+        for facet in facets {
+            Self::check_network(facet)?;
+        }
+        if !Self::all_same_prefix(facets) {
+            return Err(FederationError::MixedIdentity);
+        }
+        Ok(())
     }
 }

@@ -5,6 +5,7 @@ This module defines traits for abstracting (routing protocol, acquisition method
 use std::error::Error;
 
 use async_trait::async_trait;
+use thiserror::Error;
 
 use crate::{network::node::Node, topology::{TopologySource, source::{SnapshotSource, TopologyError}, store::SourceId}};
 
@@ -87,6 +88,39 @@ where
     pub fn new(protocol: P, source: S) -> Self {
         Self {protocol, source}
     }
+    
+    pub fn protocol(&self) -> &P { &self.protocol }
+    pub fn source(&self) -> &S { &self.source }
+}
+
+/// ProtocolFederator performs cross-source semantic merging for a single protocol.
+/// All pre-source semantic normalization (summary folding, stub synthesis) must be done in RoutingProtocol::post_process.
+/// The implementor must treat the provided facets as different source views of the same identity (RouterId or prefix).
+pub trait ProtocolFederator: Send + Sync {
+    /// Merge multiple router nodes (same RouterId) from different sources.
+    fn merge_routers(&self, facets: &[Node]) -> Node;
+
+    /// Merge multiple network nodes (same prefix) from different sources.
+    fn merge_networks(&self, facets: &[Node]) -> Node;
+    
+    /// Check if all provided router nodes are compatible with the federator.
+    fn can_merge_router_facets(&self, facets: &[Node]) -> Result<(), FederationError>;
+    
+    fn can_merge_network_facets(&self, facets: &[Node]) -> Result<(), FederationError>;
+}
+
+#[derive(Debug, Clone, Error)]
+pub enum FederationError {
+    #[error("Facets cannot be empty")]
+    EmptyFacets,
+    #[error("Mixed protocols")]
+    MixedProtocols,
+    #[error("Mixed node kinds")]
+    MixedNodeKinds,
+    #[error("Unsupported payload")]
+    UnsupportedPayload,
+    #[error("Facets have differing RouterId / prefix identity")]
+    MixedIdentity,
 }
 
 #[async_trait]
