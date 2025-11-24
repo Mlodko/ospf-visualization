@@ -6,7 +6,7 @@ use crate::gui::node_panel::{
 use crate::network::node::{Network, NodeInfo, ProtocolData};
 
 use crate::topology::source::SnapshotSource;
-use crate::topology::store::TopologyStore;
+use crate::topology::store::{SourceId, TopologyStore};
 use crate::{
     gui::node_shape::{
         LabelOverlay, NetworkGraphNodeShape, clear_area_highlight, clear_label_overlays,
@@ -17,12 +17,14 @@ use crate::{
 };
 use eframe::egui;
 use egui::{CentralPanel, CollapsingHeader, Context, Id, Separator, SidePanel, Ui};
+use egui_extras::{Column, TableBuilder};
 use egui_graphs::{
     DefaultEdgeShape, FruchtermanReingoldWithCenterGravity,
     FruchtermanReingoldWithCenterGravityState, LayoutForceDirected, SettingsInteraction,
     SettingsNavigation, SettingsStyle,
 };
 use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex};
+use serde::Serialize;
 use tokio::runtime::Runtime;
 
 pub fn main(rt: Arc<Runtime>) {
@@ -135,7 +137,99 @@ impl App {
             self.selected_node = Some(*node_index);
         }
     }
-
+    
+    fn render_sources_section(&mut self, ui: &mut Ui) {
+        CollapsingHeader::new("Sources")
+            .default_open(false)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        
+                        if ui.button("Print store data").clicked() {
+                            println!("[app] Pressed print store data button");
+                            let json = serde_json::to_string_pretty(&self.store);
+                            match json {
+                                Ok(json) => println!("{}", json),
+                                Err(err) => println!("Error serializing store data: {}", err)
+                            }
+                        }
+                        
+                        let mut rows: Vec<_> = self.store.sources_iter()
+                            .map(|(src_id, state)| {
+                                (
+                                    src_id.clone(),
+                                    state.health.clone(),
+                                    state.partition.nodes.len(),
+                                    state.last_snapshot.clone()
+                                )
+                            })
+                            .collect();
+                        rows.sort_by(|this, other| this.3.cmp(&other.3));
+                        
+                        let mut sources_to_remove: Vec<SourceId> = Vec::new();
+                        
+                        let table = TableBuilder::new(ui)
+                            .striped(true)
+                            .resizable(true)
+                            .column(Column::auto().at_least(70.0))
+                            .column(Column::auto().at_least(70.0))
+                            .column(Column::auto().at_least(55.0))
+                            .column(Column::auto().at_least(145.0))
+                            .column(Column::auto().at_least(55.0));
+                        
+                        table
+                            .header(20.0, |mut header| {
+                                header.col(|ui| { ui.strong("Source"); });
+                                header.col(|ui| { ui.strong("Health"); });
+                                header.col(|ui| { ui.strong("#Nodes"); });
+                                header.col(|ui| { ui.strong("Last snapshot (s)"); });
+                                header.col(|ui| { ui.strong("Actions"); });
+                            })
+                            .body(|mut body| {
+                                for (src_id, health, nodes_count, last_snapshot) in rows {
+                                    body.row(22.0, |mut row| {
+                                        row.col(|ui| { ui.label(src_id.to_string()); });
+                                        row.col(|ui| { ui.label(health.to_string()); });
+                                        row.col(|ui| { ui.label(nodes_count.to_string()); });
+                                        row.col(|ui| { ui.label(humantime::format_rfc3339_seconds(last_snapshot).to_string()); });
+                                        row.col(|ui| {
+                                            ui.horizontal(|ui| {
+                                                if ui.small_button("🗑").on_hover_text("Remove a source and its partition from the store").clicked() {
+                                                    sources_to_remove.push(src_id.clone());
+                                                }
+                                                if ui.small_button("🗋").on_hover_text("Serialize the source state and print to stdout").clicked() {
+                                                    let state = self.store.get_source_state(&src_id).expect("Failed to get source state, this should never happen");
+                                                    println!("{}", serde_json::to_string_pretty(state).unwrap_or("Couldn't serialize".to_string()))
+                                                }
+                                            });
+                                        });
+                                    })
+                                }
+                            });
+                        
+                        if !sources_to_remove.is_empty() {
+                            for src_id in sources_to_remove {
+                                if let Err(e) = self.store.remove_partition(&src_id) {
+                                    eprintln!("Failed to remove partition: {}", e);
+                                } else {
+                                    // Source removed, reload graph
+                                    self.reload_graph();
+                                }
+                            }
+                        }
+                        
+                    })
+            });
+        
+        
+    }
+    
+    fn reload_graph(&mut self) {
+        let merged = self.store.build_merged_view(self.live_view_only);
+        self.graph.reconcile(merged);
+    }
+    
     // update_data removed: label edits now apply directly via floating panel
 
     fn render(&mut self, ctx: &Context) {
@@ -222,6 +316,11 @@ impl App {
                         rt.block_on(self.switch_snmp_target());
                     }
                 });
+            
+            ui.add(Separator::default());
+            
+            self.render_sources_section(ui);
+            
             ui.add(Separator::default());
 
             // Forces section
@@ -254,10 +353,6 @@ impl App {
             });
 
             ui.separator();
-            if ui.button("Print store data").clicked() {
-                println!("[app] Pressed print store data button");
-                println!("{}", self.store.to_string());
-            }
             if ui.button("Print graph data").clicked() {
                 println!("[app] Pressed print graph data button");
                 println!("{}", self.graph.to_string())
@@ -324,6 +419,9 @@ impl App {
                     let render_node_label = |ui: &mut Ui, _ctx: &Context| {
                         let node_info = &selected_node.props().payload.info;
                         ui.label(format!("Node ID: {}", selected_node.payload().id));
+                        if ui.button("Print serialized node data").clicked() {
+                            println!("{}", serde_json::to_string_pretty(selected_node.payload()).unwrap());
+                        }
                         match node_info {
                             NodeInfo::Router(router) => {
                                 ui.label(format!("Router ID: {}", router.id));
@@ -403,7 +501,7 @@ impl App {
     async fn refresh_from_source(&mut self) {
         self.selected_node = None;
 
-        let now = std::time::Instant::now();
+        let now = std::time::SystemTime::now();
 
         // Fetch SourceId first so we can mark it lost if node fetch fails.
         let src_id = self.topo.fetch_source_id().await;

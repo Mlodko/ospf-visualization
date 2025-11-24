@@ -11,21 +11,23 @@ This module defines:
 
 use crate::network::{
     node::{Node, NodeInfo, OspfNetworkPayload, OspfPayload, PerAreaRouterFacet, ProtocolData},
-    router::{Router, RouterId},
+    router::RouterId,
 };
 use ipnetwork::IpNetwork;
 use ospf_parser::OspfLinkStateAdvertisement;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use std::{
     collections::{HashMap, HashSet},
     net::Ipv4Addr,
-    time::Instant,
+    time::SystemTime,
 };
 use uuid::Uuid;
 
 pub type SourceId = RouterId;
 
 /// Collection of nodes originating from one source (e.g. a router from which the topology data is collected)
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Partition {
     pub nodes: HashMap<Uuid, Node>,
 }
@@ -41,24 +43,34 @@ impl Partition {
 }
 
 /// Represents a source's status
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SourceHealth {
     Connected,
     Lost,
 }
 
-#[derive(Debug)]
+impl ToString for SourceHealth {
+    fn to_string(&self) -> String {
+        use SourceHealth::*;
+        match self {
+            Connected => "Connected".to_string(),
+            Lost => "Lost".to_string()
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 /// Holds information about a source, as well as the partition it manages.
 pub struct SourceState {
     pub health: SourceHealth,
     pub partition: Partition,
-    pub last_snapshot: Instant, // when we last replaced the snapshot successfully
-    pub last_connected: Instant, // when acquisition last succeeded
-    pub last_status_change: Instant, // when health last changed
+    pub last_snapshot: SystemTime, // when we last replaced the snapshot successfully
+    pub last_connected: SystemTime, // when acquisition last succeeded
+    pub last_status_change: SystemTime, // when health last changed
 }
 impl SourceState {
     /// Creates a new `SourceState` from a `Partition` and the `Instant` of the last data update.
-    pub fn new(partition: Partition, ts: Instant) -> Self {
+    pub fn new(partition: Partition, ts: SystemTime) -> Self {
         SourceState {
             partition,
             health: SourceHealth::Connected,
@@ -70,13 +82,19 @@ impl SourceState {
 }
 
 /// Storage for all known sources. Manages merging topologies from sources.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct TopologyStore {
     sources: HashMap<SourceId, SourceState>,
 }
 
+#[derive(Debug, Clone, Error)]
+pub enum StoreError {
+    #[error("Source not found: {0}")]
+    SourceNotFound(SourceId)
+}
+
 /// Represents a router as seen from one source.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouterFacet {
     pub source_id: SourceId,
     pub area_id: Option<Ipv4Addr>,
@@ -194,8 +212,24 @@ impl ToString for TopologyStore {
 }
 
 impl TopologyStore {
+    
+    pub fn sources_iter(&self) -> impl Iterator<Item = (&SourceId, &SourceState)> {
+        self.sources.iter()
+    }
+    
+    pub fn get_source_state(&self, src_id: &SourceId) -> Option<&SourceState> {
+        self.sources.get(src_id)
+    }
+    
+    pub fn remove_partition(&mut self, src_id: &SourceId) -> Result<(), StoreError> {
+        match self.sources.remove(src_id) {
+            Some(_) => Ok(()),
+            None => Err(StoreError::SourceNotFound(src_id.clone()))
+        }
+    }
+    
     /// Replace the partition of a source with a new set of nodes. If a node is already part of the partition its data is updated.
-    pub fn replace_partition(&mut self, src_id: SourceId, nodes: Vec<Node>, timestamp: Instant) {
+    pub fn replace_partition(&mut self, src_id: SourceId, nodes: Vec<Node>, timestamp: SystemTime) {
         // annotate nodes with their source for partition-based highlighting
         let mut annotated = Vec::with_capacity(nodes.len());
         for mut node in nodes {
@@ -219,7 +253,7 @@ impl TopologyStore {
     }
 
     /// Mark a source as lost.
-    pub fn mark_lost(&mut self, src_id: &SourceId, timestamp: Instant) {
+    pub fn mark_lost(&mut self, src_id: &SourceId, timestamp: SystemTime) {
         if let Some(state) = self.sources.get_mut(src_id) {
             state.health = SourceHealth::Lost;
             state.last_status_change = timestamp;
@@ -444,7 +478,7 @@ impl TopologyStore {
     // 3) if same, prefer smaller SourceId (deterministic)
     #[deprecated(note = "Use build_merged_view instead")]
     pub fn union_nodes(&self, connected_only: bool) -> Vec<Node> {
-        let mut best: HashMap<Uuid, (Node, bool, Instant, &SourceId)> = HashMap::new();
+        let mut best: HashMap<Uuid, (Node, bool, SystemTime, &SourceId)> = HashMap::new();
 
         for (src_id, state) in &self.sources {
             let is_connected = matches!(state.health, SourceHealth::Connected);
@@ -713,4 +747,9 @@ fn classify_network_kind(node: &Node) -> NetKind {
         }
         _ => NetKind::Other,
     }
+}
+
+mod tests {
+    use super::*;
+
 }

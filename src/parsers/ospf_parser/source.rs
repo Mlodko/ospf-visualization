@@ -14,10 +14,11 @@ transport-specific responses into `OspfRawRow`.
 use std::{fmt::Display, net::Ipv4Addr};
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 /// Minimal, protocol-neutral representation of an OSPF LSDB row.
 /// Transport adapters (SNMP/NETCONF/RESTCONF) should populate this without leaking transport types.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OspfRawRow {
     pub area_id: Ipv4Addr,
     pub link_state_id: Ipv4Addr,

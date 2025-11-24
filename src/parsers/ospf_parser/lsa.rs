@@ -55,6 +55,7 @@ pub struct OspfLsdbEntry {
     link_state_id: Ipv4Addr,
     router_id: Ipv4Addr,
     advertisement: Arc<OspfLinkStateAdvertisement>,
+    raw_lsa_bytes: Arc<Vec<u8>>
 }
 
 impl TryFrom<OspfRawRow> for OspfLsdbEntry {
@@ -71,6 +72,7 @@ impl TryFrom<OspfRawRow> for OspfLsdbEntry {
             link_state_id: row.link_state_id,
             router_id: row.router_id,
             advertisement: Arc::new(advertisement),
+            raw_lsa_bytes: Arc::new(row.lsa_bytes)
         })
     }
 }
@@ -169,6 +171,7 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
         advertising_router: lsa.router_id,
         checksum,
         payload: crate::network::node::OspfPayload::Router(payload),
+        raw_lsa_bytes: lsa.raw_lsa_bytes.clone()
     };
 
     let router = Router {
@@ -208,6 +211,7 @@ pub fn parse_lsa_type_2_to_network(lsa: &OspfLsdbEntry) -> Result<Network, LsaEr
                 externals: vec![],
             },
         ),
+        raw_lsa_bytes: lsa.raw_lsa_bytes.clone()
     });
 
     let attached_routers = advertisement
@@ -251,6 +255,7 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
                 externals: vec![],
             },
         ),
+        raw_lsa_bytes: lsa.raw_lsa_bytes.clone()
     });
 
     Ok(Network {
