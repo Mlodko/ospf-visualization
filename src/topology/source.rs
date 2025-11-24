@@ -49,8 +49,10 @@ type SourceId = RouterId;
 /// Prefer this over TopologySource - this allows for integration with topology source mechanisms.
 #[async_trait]
 pub trait SnapshotSource: TopologySource {
+    /// Fetches the source ID for the topology data.
     async fn fetch_source_id(&mut self) -> TopologyResult<SourceId>;
     
+    /// Fetches nodes and source id and returns a tuple.
     async fn fetch_snapshot(&mut self) -> TopologyResult<(SourceId, Vec<Node>)> {
         let source_id = self.fetch_source_id().await?;
         let nodes = self.fetch_nodes().await?;

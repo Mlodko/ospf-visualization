@@ -5,8 +5,10 @@ use crate::gui::node_panel::{
 };
 use crate::network::node::{Network, NodeInfo, ProtocolData};
 
+use crate::topology::ospf_protocol::OspfFederator;
+use crate::topology::protocol::{FederationError, ProtocolFederator};
 use crate::topology::source::SnapshotSource;
-use crate::topology::store::{SourceId, TopologyStore};
+use crate::topology::store::{MergeConfig, SourceId, TopologyStore};
 use crate::{
     gui::node_shape::{
         LabelOverlay, NetworkGraphNodeShape, clear_area_highlight, clear_label_overlays,
@@ -74,7 +76,6 @@ impl std::error::Error for RuntimeError {}
 struct App {
     topo: Box<dyn SnapshotSource>,
     store: TopologyStore,
-    live_view_only: bool,
 
     graph: NetworkGraph,
 
@@ -87,6 +88,9 @@ struct App {
     snmp_port: u16,
     snmp_community: String,
     clear_sources_on_switch: bool,
+    
+    
+    merge_config: MergeConfig
 }
 
 impl App {
@@ -97,29 +101,18 @@ impl App {
         let _ = cc; // silence unused variable warning for now
 
         let snmp_client = crate::data_aquisition::snmp::SnmpClient::default();
-        let mut topo: Box<dyn SnapshotSource> =
+        let topo: Box<dyn SnapshotSource> =
             Box::new(OspfSnmpTopology::from_snmp_client(snmp_client));
-        let mut store = TopologyStore::default();
+        let store = TopologyStore::default();
+        
+        let merge_config = MergeConfig::default();
 
-        // First snapshot: replace partition and build union (live-only)
-        /*
-        let now = Instant::now();
-        let (src, nodes) = topo
-            .fetch_snapshot()
-            .await
-            .map_err(|e| RuntimeError::TopologyFetchError(e.to_string()))?;
-        store.replace_partition(src, nodes, now);
-        */
-
-        let merged: Vec<Node> = store.build_merged_view(true);
-        let graph = NetworkGraph::build_new(merged);
         let layout_state = LayoutState::default();
 
         Ok(Self {
             topo,
             store,
-            live_view_only: false,
-            graph,
+            graph: NetworkGraph::default(),
 
             selected_node: Option::default(),
             runtime,
@@ -129,6 +122,8 @@ impl App {
             snmp_port: 1161,
             snmp_community: "public".to_string(),
             clear_sources_on_switch: true,
+            
+            merge_config
         })
     }
 
@@ -225,30 +220,17 @@ impl App {
         
     }
     
-    fn reload_graph(&mut self) {
-        let merged = self.store.build_merged_view(self.live_view_only);
+    fn reload_graph(&mut self) -> Result<(), FederationError> {
+        let merged = self.store.build_merged_view_with(&self.merge_config)?;
+        
         self.graph.reconcile(merged);
+        Ok(())
     }
     
     // update_data removed: label edits now apply directly via floating panel
 
     fn render(&mut self, ctx: &Context) {
         let render_side_panel = |ui: &mut Ui| {
-            // Live vs merged toggle
-            /*
-            if ui
-                .checkbox(
-                    &mut self.live_view_only,
-                    "Live view (only connected sources)",
-                )
-                .changed()
-            {
-                println!("[app] Live view changed to: {}", self.live_view_only);
-                let merged = self.store.build_merged_view(self.live_view_only);
-                self.graph = NetworkGraph::build_new(merged);
-            }
-            */
-
             let mut highlight_enabled = partition_highlight_enabled();
             if ui
                 .checkbox(&mut highlight_enabled, "Partition highlight")
@@ -261,15 +243,8 @@ impl App {
                 );
                 set_partition_highlight_enabled(highlight_enabled);
             }
+            
             ui.separator();
-            ui.label("Change node label");
-            ui.label("Select a node; its label can be edited in the floating panel.");
-            if ui.button("Poll source and rebuild graph").clicked() {
-                println!("[app] Polling source and rebuilding graph");
-                let rt = self.runtime.clone();
-                rt.block_on(self.refresh_from_source());
-            }
-            ui.add(Separator::default());
 
             // SNMP connection management
             CollapsingHeader::new("SNMP Connection")
@@ -305,13 +280,11 @@ impl App {
 \tIP: {}:{}
 \tCommunity: {}
 \tClear sources: {}
-\tLive view: {}
 }}",
                             self.snmp_host,
                             self.snmp_port,
                             self.snmp_community,
                             self.clear_sources_on_switch,
-                            self.live_view_only
                         );
                         rt.block_on(self.switch_snmp_target());
                     }
@@ -358,9 +331,17 @@ impl App {
                 println!("{}", self.graph.to_string())
             }
             if ui.button("Try build graph from store and print").clicked() {
-                let graph = NetworkGraph::build_new(self.store.build_merged_view(false));
-                println!("[app] Pressed try build graph from store and print button");
-                println!("Fresh {}", graph.to_string())
+                let merged = self.store.build_merged_view_with(&self.merge_config);
+                match merged {
+                    Ok(merged) => {
+                        let graph = NetworkGraph::build_new(merged);
+                        println!("[app] Pressed try build graph from store and print button");
+                        println!("Fresh {}", graph.to_string())
+                    }
+                    Err(e) => {
+                        println!("[app] Error building graph from store: {}", e);
+                    }
+                }
             }
             if ui.button("Print all node uuids").clicked() {
                 println!("[app] Pressed print all node uuids button");
@@ -512,23 +493,36 @@ impl App {
         let now = std::time::SystemTime::now();
 
         // Fetch SourceId first so we can mark it lost if node fetch fails.
-        let src_id = self.topo.fetch_source_id().await;
-        match src_id {
-            Ok(src) => match self.topo.fetch_nodes().await {
-                Ok(nodes) => {
-                    self.store.replace_partition(src, nodes, now);
-                    let merged = self.store.build_merged_view(self.live_view_only);
-                    self.graph.reconcile(merged);
+        let snapshot = self.topo.fetch_snapshot().await;
+        match snapshot {
+            Ok((src_id, nodes)) => {
+                let rollback_state = self.store.get_source_state(&src_id).cloned();
+                self.store.replace_partition(&src_id, nodes, now);
+                let merged = self.store.build_merged_view_with(&self.merge_config);
+                match merged {
+                    Ok(merged) => {
+                        self.graph.reconcile(merged);
+                        println!("Merged view reconciled");
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to build merged view: {:?}", e);
+                        match rollback_state {
+                            Some(state) => {
+                                eprintln!("Found state from before merge, rollbacking");
+                                let nodes = state.partition.nodes.into_iter().map(|(_, node)| node).collect();
+                                self.store.replace_partition(&src_id, nodes, now);
+                            }
+                            None => {
+                                eprintln!("No state found before merge, removing partition for {}", src_id);
+                                _ = self.store.remove_partition(&src_id);
+                            }
+                        }
+                    }
                 }
-                Err(e) => {
-                    self.store.mark_lost(&src, now);
-                    let merged = self.store.build_merged_view(self.live_view_only);
-                    self.graph.reconcile(merged);
-                    eprintln!("Failed to fetch topology nodes: {:?}", e);
-                }
+                
             },
             Err(e) => {
-                eprintln!("Failed to fetch source id: {:?}", e);
+                eprintln!("Failed to fetch snapshot: {:?}", e);
             }
         }
     }

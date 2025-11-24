@@ -30,6 +30,15 @@ pub struct NetworkGraph {
     pub node_id_to_index_map: HashMap<Uuid, NodeIndex>,
 }
 
+impl Default for NetworkGraph {
+    fn default() -> Self {
+        Self {
+            graph: Graph::new(StableGraph::new()),
+            node_id_to_index_map: HashMap::new(),
+        }
+    }
+}
+
 impl NetworkGraph {
     /// Build a new NetworkGraph from a list of protocol-agnostic nodes.
     /// This method avoids panics by validating lookups and ignores incomplete references.

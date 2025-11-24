@@ -2,8 +2,6 @@
 This module defines traits for abstracting (routing protocol, acquisition method) behavior.
 */
 
-use std::error::Error;
-
 use async_trait::async_trait;
 use thiserror::Error;
 
