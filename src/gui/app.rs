@@ -1,13 +1,12 @@
 use std::collections::HashMap;
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
 use crate::gui::node_panel::{
     FloatingNodePanel, bullet_list, collapsible_section, protocol_data_section,
 };
-use crate::network::node::{Network, NodeInfo, ProtocolData};
+use crate::network::node::NodeInfo;
 
-use crate::topology::ospf_protocol::OspfFederator;
-use crate::topology::protocol::{FederationError, ProtocolFederator};
+use crate::topology::protocol::FederationError;
 use crate::topology::source::SnapshotSource;
 use crate::topology::store::{MergeConfig, SourceId, TopologyStore};
 use crate::{
@@ -24,10 +23,9 @@ use egui_extras::{Column, TableBuilder};
 use egui_graphs::{
     DefaultEdgeShape, FruchtermanReingoldWithCenterGravity,
     FruchtermanReingoldWithCenterGravityState, LayoutForceDirected, SettingsInteraction,
-    SettingsNavigation, SettingsStyle,
+    SettingsNavigation
 };
 use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex};
-use serde::Serialize;
 use tokio::runtime::Runtime;
 
 pub fn main(rt: Arc<Runtime>) {
@@ -60,6 +58,7 @@ type Layout = FruchtermanReingoldWithCenterGravity;
 type LayoutState = FruchtermanReingoldWithCenterGravityState;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 enum RuntimeError {
     TopologyFetchError(String),
 }

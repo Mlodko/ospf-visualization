@@ -1,4 +1,4 @@
-use std::{fmt::format, str::FromStr};
+use std::str::FromStr;
 
 use async_trait::async_trait;
 use snmp2::Oid;

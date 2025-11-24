@@ -14,6 +14,7 @@ pub enum AcquisitionError {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum ProtocolParseError {
     Malformed(String),
     Unsupported(String)
@@ -87,7 +88,10 @@ where
         Self {protocol, source}
     }
     
+    #[allow(unused)]
     pub fn protocol(&self) -> &P { &self.protocol }
+    
+    #[allow(unused)]
     pub fn source(&self) -> &S { &self.source }
 }
 

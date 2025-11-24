@@ -20,6 +20,7 @@ pub enum EdgeMetric {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum EdgeKind {
     /// Physical or authoritative presence on network
     Membership,

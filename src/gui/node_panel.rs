@@ -1,9 +1,8 @@
 use egui::{
     self, CollapsingHeader, Context, Frame, Id, InnerResponse, Label, Order, Pos2, Response, Ui, Vec2
 };
-use ospf_parser::{OspfLinkStateAdvertisement, OspfRouterLinksAdvertisement};
 
-use crate::network::node::{OspfData, OspfPayload, OspfRouterPayload, ProtocolData};
+use crate::network::node::{OspfData, OspfPayload, ProtocolData};
 
 /// A reusable floating panel anchored near a node on the canvas.
 /// Designed to replace simple text labels with a fully interactive panel.
@@ -73,6 +72,7 @@ impl Default for NodePanelOptions {
 }
 
 /// Response data from the floating panel show call.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct NodePanelResponse {
     /// The panel's response rect.
@@ -87,6 +87,7 @@ pub struct NodePanelResponse {
     pub area_response: Response,
 }
 
+#[allow(dead_code)]
 impl FloatingNodePanel {
     /// Create a new floating node panel anchored at a screen-space position.
     pub fn new(id: Id, anchor: Pos2) -> Self {
@@ -148,7 +149,7 @@ impl FloatingNodePanel {
             .fixed_pos(pos)
             .show(ctx, |ui| {
                 // Use a pop-up frame style for a floating feel.
-                let mut frame = Frame::popup(ui.style());
+                let frame = Frame::popup(ui.style());
 
                 frame.show(ui, |ui| {
                     // Apply stored width if any; otherwise fallback to configured min_width.
@@ -228,8 +229,8 @@ impl FloatingNodePanel {
             y: self.anchor.y + self.options.offset.y,
         };
 
-        let mut pinned_state = persisted_pin(ctx, self.id).unwrap_or(self.options.pinned_default);
-        let mut close_clicked = false;
+        let pinned_state = persisted_pin(ctx, self.id).unwrap_or(self.options.pinned_default);
+        let close_clicked = false;
         let mut label_changed_flag = false;
 
         let area: InnerResponse<()> = egui::Area::new(self.id)
@@ -239,7 +240,7 @@ impl FloatingNodePanel {
             .constrain(true)
             .fixed_pos(pos)
             .show(ctx, |ui| {
-                let mut frame = Frame::popup(ui.style());
+                let frame = Frame::popup(ui.style());
                 frame.show(ui, |ui| {
                     // Dynamic width application (moved from show):
                     let stored_width =
@@ -396,16 +397,6 @@ where
             ui.label(s.to_string());
         });
     }
-}
-
-/// Convenience for a single-line label editor row.
-/// Returns the egui response for the text edit so caller can react to changes.
-pub fn label_editor_row(ui: &mut Ui, label: &mut String) -> Response {
-    ui.horizontal(|ui| {
-        ui.label("Label");
-        ui.text_edit_singleline(label)
-    })
-    .response
 }
 
 /// Internal: read persisted pin state.

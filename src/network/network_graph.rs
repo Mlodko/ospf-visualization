@@ -191,7 +191,7 @@ impl NetworkGraph {
         // 2) Remove nodes that no longer exist
         //    Collect first to avoid borrow issues during mutation.
         let mut to_remove: Vec<Uuid> = Vec::new();
-        for (id, idx) in self.node_id_to_index_map.iter() {
+        for (id, _) in self.node_id_to_index_map.iter() {
             if !desired_map.contains_key(id) {
                 to_remove.push(*id);
             }

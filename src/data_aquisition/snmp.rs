@@ -2,11 +2,12 @@
 
 use crate::data_aquisition::core::LinkStateValue;
 
-use super::core::{NetworkClient, RawRouterData};
+use super::core::RawRouterData;
 
 use snmp2::{AsyncSession, MessageType, Oid, Version, v3::Security};
+use thiserror::Error;
 use std::{
-    collections::HashMap, error::Error, fmt::Display, net::SocketAddr, str::FromStr, sync::Arc,
+    collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc,
     time::Duration,
 };
 use tokio::sync::Mutex;
@@ -201,40 +202,27 @@ impl<'a> QueryBuilder<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SnmpClientError {
+    #[error("Failed to parse OID")]
     OidParseError,
+    #[error("Missing SNMPv3 security parameters")]
     NoV3Security,
+    #[error("IO error: {0}")]
     IoError(std::io::Error),
+    #[error("SNMP error: {0}")]
     Snmp2Error(snmp2::Error),
+    #[error("No SNMP session")]
     NoSession,
+    #[error("Invalid query")]
     InvalidQuery,
+    #[error("Multiple OIDs provided for single GET/GETNEXT")]
     MultipleOidsOnGet,
+    #[error("Unsupported SNMP operation")]
     UnsupportedSnmpOperation,
+    #[error("Invalid data for expected SNMP response")]
     InvalidData,
 }
-
-impl Display for SnmpClientError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SnmpClientError::OidParseError => write!(f, "failed to parse OID"),
-            SnmpClientError::NoV3Security => write!(f, "missing SNMPv3 security parameters"),
-            SnmpClientError::IoError(e) => write!(f, "IO error: {}", e),
-            SnmpClientError::Snmp2Error(e) => write!(f, "SNMP error: {}", e),
-            SnmpClientError::NoSession => write!(f, "no SNMP session"),
-            SnmpClientError::InvalidQuery => write!(f, "invalid query (missing operation or OIDs)"),
-            SnmpClientError::MultipleOidsOnGet => {
-                write!(f, "multiple OIDs provided for single GET/GETNEXT")
-            }
-            SnmpClientError::UnsupportedSnmpOperation => write!(f, "unsupported SNMP operation"),
-            SnmpClientError::InvalidData => write!(f, "invalid data for expected SNMP response"),
-        }
-    }
-}
-
-impl Error for SnmpClientError {}
-
-impl NetworkClient for SnmpClient {}
 
 /// A utility struct representing a single row of an SNMP table.
 #[derive(Debug, Clone)]

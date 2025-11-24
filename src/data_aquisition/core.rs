@@ -4,6 +4,7 @@ use snmp2::{Oid, Value};
 
 /// Represents raw data retrieved from a network device along with the protocol used to retrieve it.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum RawRouterData<'a> {
     Snmp {
         oid: Oid<'a>,
@@ -13,12 +14,9 @@ pub enum RawRouterData<'a> {
     Restconf(String)
 }
 
-/// Represents a network client that can retrieve data from a network device.
-pub trait NetworkClient {
-}
-
 /// Replacement for the snmp2::Value type due to lifetime shenanigans
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum LinkStateValue {
     // Core OSPF types
     Integer(i64),           // RouterID, AreaID, LSA types, sequence numbers, ages, metrics

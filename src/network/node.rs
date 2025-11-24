@@ -184,12 +184,14 @@ impl From<&OspfLinkStateAdvertisement> for SerializableOspfLsaType {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct OspfDataWire {
+    #[allow(dead_code)]
     pub version: u32, // Increment in Serialize impl this after each change, currently 2
     pub area_id: Ipv4Addr,
     pub link_state_id: Ipv4Addr,
     pub advertising_router: Ipv4Addr,
     pub checksum: Option<u16>,
     pub payload: OspfPayload,
+    #[allow(dead_code)]
     pub lsa_kind: SerializableOspfLsaType,
     pub lsa_hex: String
 }
@@ -235,16 +237,6 @@ impl<'de> Deserialize<'de> for OspfData {
     }
 }
 
-
-
-#[derive(Debug, Clone)]
-pub struct OspfRouterData {
-    pub is_abr: bool,
-    pub is_asbr: bool,
-    pub is_nssa_capable: bool,
-    
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IsIsData {
     // TODO
@@ -259,6 +251,7 @@ pub enum ProtocolData {
 }
 
 mod tests {
+    #[allow(unused)]
     use super::*;
     
     #[test]

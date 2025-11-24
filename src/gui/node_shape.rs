@@ -1,19 +1,19 @@
 use std::cell::RefCell;
 
 use egui::{
-    Color32, Context, CornerRadius, FontFamily, FontId, Pos2, Rect, Shape, Stroke, Vec2,
-    epaint::{CircleShape, RectShape, TextShape},
+    Color32, Pos2, Shape, Stroke, Vec2,
+    epaint::CircleShape,
 };
 use egui_graphs::{DisplayNode, DrawContext, NodeProps};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
 use crate::network::router::RouterId;
 use crate::network::{
-    node::{Node, NodeInfo},
-    router::Router,
+    node::{Node, NodeInfo}
 };
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct NetworkGraphNodeShape {
     pub label: String,
     pub pos: Pos2,
@@ -31,6 +31,7 @@ pub struct NetworkGraphNodeShape {
 
 // Thread-local overlay collector populated during shapes() and consumed after the GraphView is drawn.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct LabelOverlay {
     pub center: Pos2,
     pub circle_radius: f32,
@@ -124,7 +125,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
                 .is_some_and(|id| hovered_src.is_some_and(|src_id| *id == src_id));
 
         // Base fill (tint if highlighted)
-        let mut fill = self.effective_color(ctx);
+        let fill = self.effective_color(ctx);
 
         // Smooth fade ring ONLY for origin
         let fade_highlighted = ctx.ctx.animate_bool(
@@ -226,7 +227,8 @@ impl NetworkGraphNodeShape {
         }
         base
     }
-
+    
+    #[allow(dead_code)]
     fn effective_stroke(&self, _ctx: &DrawContext) -> Stroke {
         if self.highlighted {
             Stroke {
@@ -237,50 +239,8 @@ impl NetworkGraphNodeShape {
             Stroke::default()
         }
     }
-
-    pub(crate) fn label_shape(
-        galley: std::sync::Arc<egui::Galley>,
-        center: Pos2,
-        radius: f32,
-        color: Color32,
-        circle_padding: f32,
-    ) -> Vec<Shape> {
-        // This helper is retained for reference, but we no longer return these shapes
-        // from shapes() because that can cause the edge hit-test panic in egui_graphs.
-        let label_pos = Pos2::new(
-            center.x - galley.size().x / 2.,
-            center.y - radius * 2. - galley.size().y - circle_padding,
-        );
-        let pad = Vec2::new(6.0, 4.0);
-        let rect_min = Pos2::new(label_pos.x - pad.x, label_pos.y - pad.y);
-        let rect_max = Pos2::new(
-            label_pos.x + galley.size().x + pad.x,
-            label_pos.y + galley.size().y + pad.y,
-        );
-        let rect = Rect::from_min_max(rect_min, rect_max);
-
-        let bg_fill = Color32::from_black_alpha(160);
-        let bg = RectShape::filled(rect, CornerRadius::ZERO, bg_fill).into();
-        let text = TextShape::new(label_pos, galley, color).into();
-
-        vec![bg, text]
-    }
 }
 
-pub(crate) fn build_label_galley(
-    ctx: &Context,
-    text: &str,
-    radius: f32,
-    color: Color32,
-) -> std::sync::Arc<egui::Galley> {
-    ctx.fonts_mut(|f| {
-        f.layout_no_wrap(
-            text.to_owned(),
-            FontId::new(radius, FontFamily::Monospace),
-            color,
-        )
-    })
-}
 
 fn closest_point_on_circle(center: Pos2, radius: f32, dir: Vec2) -> Pos2 {
     center + dir.normalized() * (radius + 1.0)

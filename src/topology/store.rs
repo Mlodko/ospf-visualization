@@ -107,6 +107,7 @@ impl Default for MergeConfig {
     }
 }
 
+#[allow(unused)]
 impl MergeConfig {
     pub fn new(
         federator: Option<Box<dyn ProtocolFederator>>,
@@ -201,6 +202,7 @@ impl TopologyStore {
     }
 
     /// Mark a source as lost.
+    #[allow(unused)]
     pub fn mark_lost(&mut self, src_id: &SourceId, timestamp: SystemTime) {
         if let Some(state) = self.sources.get_mut(src_id) {
             state.health = SourceHealth::Lost;
