@@ -6,3 +6,4 @@
 
 pub mod core;
 pub mod snmp;
+pub mod ssh;
