@@ -10,10 +10,15 @@ RUN curl -s https://deb.frrouting.org/frr/keys.asc | apt-key add - && \
 
 # Install FRR with SNMP support
 RUN apt-get update && \
-    apt-get install -y frr frr-snmp
+    apt-get install -y frr frr-snmp openssh-server
+    
+RUN mkdir /var/run/sshd
+
+RUN useradd -m client && echo 'client:password' | chpasswd
+RUN usermod -aG frrvty client && usermod -aG frr client
 
 # Enable daemons
 COPY ./daemons /etc/frr/daemons
 
 # Entrypoint: start snmpd and FRR
-CMD service snmpd start && /usr/lib/frr/frrinit.sh start && tail -f /var/log/frr/ospfd.log
+CMD service ssh start && service snmpd start && /usr/lib/frr/frrinit.sh start && tail -F /var/log/frr/ospfd.log /var/log/frr/isisd.log

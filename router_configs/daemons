@@ -4,10 +4,11 @@ ospfd=yes
 ospf6d=no
 ripd=no
 ripngd=no
-isisd=no
+isisd=yes
 pimd=no
 ldpd=no
 snmp=yes
 
 zebra_options=" -M snmp"
 ospfd_options=" -M snmp"
+isisd_options=" -M snmp"
