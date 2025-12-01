@@ -1,6 +1,6 @@
 use std::{collections::HashMap, net::Ipv4Addr};
 
-use crate::network::router::{Router, RouterId};
+use crate::{network::router::{Router, RouterId}, parsers::isis_parser::core_lsp::{IsLevel, LspId, NetAddress, Tlv}};
 use ipnetwork::IpNetwork;
 use nom_derive::Parse;
 use ospf_parser::OspfLinkStateAdvertisement;
@@ -239,7 +239,10 @@ impl<'de> Deserialize<'de> for OspfData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IsIsData {
-    // TODO
+    pub is_level: IsLevel,
+    pub lsp_id: LspId,
+    pub net_address: Option<NetAddress>,
+    pub tlvs: Vec<Tlv>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -96,6 +96,10 @@ impl SshClient {
         result
     }
     
+    pub fn is_connected(&self) -> bool {
+        self.session.is_some()
+    }
+    
     pub async fn close(self) -> Result<(), SshError> {
         if let Some(session) = self.session {
             let session = session.lock().await;
@@ -135,7 +139,11 @@ mod tests {
         }
         assert!(res.is_ok());
         
-        let output = client.execute_command("ls").await;
+        let output = client.execute_command("echo \"Hello!\"").await;
+        dbg!(&output);
         assert!(output.is_ok());
+        let output = output.unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output, "Hello!\n");
     }
 }

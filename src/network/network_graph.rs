@@ -14,7 +14,7 @@ use crate::{
         node::{Node, NodeInfo, OspfPayload, ProtocolData},
         router::RouterId,
         // removed unused RouterId import
-    },
+    }, parsers::isis_parser::core_lsp::Tlv,
 };
 
 const IF_SKIP_FUNCTIONALLY_P2P_NETWORKS: bool = false;
@@ -80,31 +80,39 @@ impl NetworkGraph {
                                     if let Some(metric) = metric_by_uuid.get(&dst_uuid) {
                                         EdgeMetric::Ospf(*metric as u32)
                                     } else {
-                                        EdgeMetric::Other
+                                        EdgeMetric::None
                                     }
                                 } else {
-                                    EdgeMetric::Other
+                                    EdgeMetric::None
                                 }
                             }
-                            None => EdgeMetric::Other,
+                            None => EdgeMetric::None,
                             _ => panic!("Unexpected protocol data"),
                         }
                     } else {
-                        EdgeMetric::Other
+                        EdgeMetric::None
                     }
                 } else {
-                    EdgeMetric::Other
+                    EdgeMetric::None
                 }
             };
             if let Some(&dst_idx) = node_id_to_index_map.get(&dst_uuid) {
-                let edge = Edge {
+                let edge_src_to_dst = Edge {
                     source_id: src_uuid,
                     destination_id: dst_uuid,
-                    kind,
+                    kind: kind.clone(),
                     metric: metric,
                     protocol_tag: Some("OSPF".to_string()),
                 };
-                graph.add_edge(src_idx, dst_idx, edge);
+                graph.add_edge(src_idx, dst_idx, edge_src_to_dst);
+                let edge_dst_to_src = Edge {
+                    source_id: dst_uuid,
+                    destination_id: src_uuid,
+                    kind,
+                    metric: EdgeMetric::None,
+                    protocol_tag: Some("OSPF".to_string()),
+                };
+                graph.add_edge(dst_idx, src_idx, edge_dst_to_src);
             }
         }
         eprintln!(
@@ -404,16 +412,90 @@ impl NetworkGraph {
     fn materialize_edges(&mut self, specs: Vec<(NodeIndex, Uuid, Uuid, EdgeKind)>, log_tag: &str) {
         let mut added = 0usize;
         for (src_idx, src_uuid, dst_uuid, kind) in specs {
+            let metric = {
+                if let Some(src_node) = self.graph.node(src_idx).map(|node| node.payload()) {
+                    if let NodeInfo::Router(router) = &src_node.info {
+                        match &router.protocol_data {
+                            Some(ProtocolData::Ospf(ospf_data)) => {
+                                if let OspfPayload::Router(payload) = &ospf_data.payload {
+                                    let metric_by_uuid: HashMap<Uuid, u16> = payload
+                                        .link_metrics
+                                        .iter()
+                                        .map(|(ip, metric)| {
+                                            (RouterId::Ipv4(*ip).to_uuidv5(), *metric)
+                                        })
+                                        .collect();
+                                    if let Some(metric) = metric_by_uuid.get(&dst_uuid) {
+                                        EdgeMetric::Ospf(*metric as u32)
+                                    } else {
+                                        EdgeMetric::None
+                                    }
+                                } else {
+                                    EdgeMetric::None
+                                }
+                            }
+                            Some(ProtocolData::IsIs(data)) => {
+                                // We only consider IS reachability, ignoring IP reachability TLVs
+                                let metrics_by_uuid: HashMap<Uuid, u32> = {
+                                    let mut metrics = HashMap::new();
+                                    if let Some(Tlv::ExtendedReachability(ext_reach)) = data.tlvs.iter().find(|t| matches!(t, Tlv::ExtendedReachability(_))) {
+                                        ext_reach.neighbors.iter()
+                                            .map(|neighbor| {
+                                                let neighbor_uuid = RouterId::IsIs(neighbor.neighbor_id.clone()).to_uuidv5();
+                                                (neighbor_uuid, neighbor.metric)
+                                            })
+                                            .for_each(|(uuid, metric)| {
+                                                metrics.insert(uuid, metric);
+                                            })
+                                    }
+                                    if let Some(Tlv::IsReachability(is_reach)) = data.tlvs.iter().find(|t| matches!(t, Tlv::IsReachability(_))) {
+                                        is_reach.neighbors_iter()
+                                            .map(|neighbor| {
+                                                let neighbor_uuid = RouterId::IsIs(neighbor.system_id.clone()).to_uuidv5();
+                                                (neighbor_uuid, neighbor.metric)
+                                            })
+                                            .for_each(|(uuid, metric)| {
+                                                if !metrics.contains_key(&uuid) {
+                                                    metrics.insert(uuid, metric);
+                                                }
+                                            })
+                                    }
+                                    metrics
+                                };
+                                if let Some(metric) = metrics_by_uuid.get(&dst_uuid) {
+                                    EdgeMetric::IsIs(*metric)
+                                } else {
+                                    EdgeMetric::None
+                                }
+                            }
+                            None => EdgeMetric::None,
+                            _ => panic!("Unexpected protocol data"),
+                        }
+                    } else {
+                        EdgeMetric::None
+                    }
+                } else {
+                    EdgeMetric::None
+                }
+            };
             if let Some(&dst_idx) = self.node_id_to_index_map.get(&dst_uuid) {
-                let edge = Edge {
+                let edge_src_to_dst = Edge {
                     source_id: src_uuid,
                     destination_id: dst_uuid,
-                    kind,
-                    metric: EdgeMetric::Other,
+                    kind: kind.clone(),
+                    metric: metric,
                     protocol_tag: Some("OSPF".to_string()),
                 };
-                self.graph.add_edge(src_idx, dst_idx, edge);
-                added += 1;
+                self.graph.add_edge(src_idx, dst_idx, edge_src_to_dst);
+                let edge_dst_to_src = Edge {
+                    source_id: dst_uuid,
+                    destination_id: src_uuid,
+                    kind,
+                    metric: EdgeMetric::None,
+                    protocol_tag: Some("OSPF".to_string()),
+                };
+                self.graph.add_edge(dst_idx, src_idx, edge_dst_to_src);
+                added += 2;
             }
         }
         eprintln!("{log_tag} materialized {added} edges");

@@ -3,14 +3,18 @@ use std::collections::HashMap;
 use crate::{
     data_aquisition::snmp::SnmpClient,
     network::{
-        node::{Network as NetStruct, Node, NodeInfo, OspfPayload, PerAreaRouterFacet, ProtocolData},
+        node::{
+            Network as NetStruct, Node, NodeInfo, OspfPayload, PerAreaRouterFacet, ProtocolData,
+        },
         router::RouterId,
     },
     parsers::ospf_parser::{
         lsa::{LsaError, OspfLsdbEntry},
         source::{OspfDataSource, OspfRawRow},
     },
-    topology::protocol::{FederationError, ProtocolFederator, ProtocolParseError, ProtocolTopologyError},
+    topology::protocol::{
+        FederationError, ProtocolFederator, ProtocolParseError, ProtocolTopologyError,
+    },
 };
 use async_trait::async_trait;
 
@@ -350,25 +354,27 @@ impl OspfSnmpTopology {
     }
 }
 
-
-
+#[derive(Debug, Clone)]
 pub struct OspfFederator;
 
 impl OspfFederator {
     pub fn new() -> Self {
         Self {}
     }
-    
+
     fn select_base<'a>(facets: &'a [Node]) -> &'a Node {
         // Later: precedence by source health/timestamp.
         // For now: first facet is base (already roughly deterministic).
         &facets[0]
     }
-    
+
     fn check_router(node: &Node) -> Result<(), FederationError> {
         match &node.info {
             NodeInfo::Router(r) => {
-                let pd = r.protocol_data.as_ref().ok_or(FederationError::MixedProtocols)?;
+                let pd = r
+                    .protocol_data
+                    .as_ref()
+                    .ok_or(FederationError::MixedProtocols)?;
                 match pd {
                     ProtocolData::Ospf(odata) => {
                         if let OspfPayload::Router(_) = &odata.payload {
@@ -387,7 +393,10 @@ impl OspfFederator {
     fn check_network(node: &Node) -> Result<(), FederationError> {
         match &node.info {
             NodeInfo::Network(n) => {
-                let pd = n.protocol_data.as_ref().ok_or(FederationError::MixedProtocols)?;
+                let pd = n
+                    .protocol_data
+                    .as_ref()
+                    .ok_or(FederationError::MixedProtocols)?;
                 match pd {
                     ProtocolData::Ospf(odata) => {
                         if let OspfPayload::Network(_) = &odata.payload {
@@ -434,8 +443,6 @@ impl OspfFederator {
     }
 }
 
-
-
 impl ProtocolFederator for OspfFederator {
     fn merge_routers(&self, facets: &[Node]) -> Node {
         assert!(!facets.is_empty());
@@ -457,12 +464,12 @@ impl ProtocolFederator for OspfFederator {
                         is_virtual |= rp.is_virtual_link_endpoint;
                         is_nssa |= rp.is_nssa_capable;
                         for f in &rp.per_area_facets {
-                            let entry = per_area.entry(f.area_id).or_insert((0,0,0));
+                            let entry = per_area.entry(f.area_id).or_insert((0, 0, 0));
                             entry.0 += f.p2p_link_count;
                             entry.1 += f.transit_link_count;
                             entry.2 += f.stub_link_count;
                         }
-                        for (k,v) in &rp.link_metrics {
+                        for (k, v) in &rp.link_metrics {
                             link_metrics.insert(*k, *v); // last wins; refine if needed
                         }
                     }
@@ -490,9 +497,13 @@ impl ProtocolFederator for OspfFederator {
                     rp.transit_link_count = total_transit;
                     rp.stub_link_count = total_stub;
                     rp.link_metrics = link_metrics;
-                    rp.per_area_facets = per_area.into_iter()
-                        .map(|(area_id,(p2p, transit, stub))| PerAreaRouterFacet {
-                            area_id, p2p_link_count: p2p, transit_link_count: transit, stub_link_count: stub
+                    rp.per_area_facets = per_area
+                        .into_iter()
+                        .map(|(area_id, (p2p, transit, stub))| PerAreaRouterFacet {
+                            area_id,
+                            p2p_link_count: p2p,
+                            transit_link_count: transit,
+                            stub_link_count: stub,
                         })
                         .collect();
                 }
@@ -511,8 +522,12 @@ impl ProtocolFederator for OspfFederator {
             if let NodeInfo::Network(net) = &n.info {
                 if let Some(ProtocolData::Ospf(pd)) = &net.protocol_data {
                     match *pd.advertisement {
-                        ospf_parser::OspfLinkStateAdvertisement::NetworkLinks(_) => detailed.push(n.clone()),
-                        ospf_parser::OspfLinkStateAdvertisement::SummaryLinkIpNetwork(_) => summary.push(n.clone()),
+                        ospf_parser::OspfLinkStateAdvertisement::NetworkLinks(_) => {
+                            detailed.push(n.clone())
+                        }
+                        ospf_parser::OspfLinkStateAdvertisement::SummaryLinkIpNetwork(_) => {
+                            summary.push(n.clone())
+                        }
                         _ => {}
                     }
                 }
@@ -528,8 +543,11 @@ impl ProtocolFederator for OspfFederator {
 
         if let NodeInfo::Network(base_net) = &mut base.info {
             // Union attached routers
-            let mut seen: HashSet<Uuid> =
-                base_net.attached_routers.iter().map(|r| r.to_uuidv5()).collect();
+            let mut seen: HashSet<Uuid> = base_net
+                .attached_routers
+                .iter()
+                .map(|r| r.to_uuidv5())
+                .collect();
             for extra in detailed.into_iter().chain(summary.into_iter()) {
                 if let NodeInfo::Network(net) = &extra.info {
                     for rid in &net.attached_routers {
@@ -545,8 +563,11 @@ impl ProtocolFederator for OspfFederator {
                         if let (OspfPayload::Network(base_np), OspfPayload::Network(extra_np)) =
                             (&mut base_pd.payload, &extra_pd.payload)
                         {
-                            let mut sigs: HashSet<(u32, Uuid)> =
-                                base_np.summaries.iter().map(|s| (s.metric, s.origin_abr.to_uuidv5())).collect();
+                            let mut sigs: HashSet<(u32, Uuid)> = base_np
+                                .summaries
+                                .iter()
+                                .map(|s| (s.metric, s.origin_abr.to_uuidv5()))
+                                .collect();
                             for s in &extra_np.summaries {
                                 let sig = (s.metric, s.origin_abr.to_uuidv5());
                                 if sigs.insert(sig) {
@@ -562,7 +583,10 @@ impl ProtocolFederator for OspfFederator {
         base
     }
 
-    fn can_merge_router_facets(&self, facets: &[Node]) -> Result<(), super::protocol::FederationError> {
+    fn can_merge_router_facets(
+        &self,
+        facets: &[Node],
+    ) -> Result<(), super::protocol::FederationError> {
         if facets.is_empty() {
             return Err(FederationError::EmptyFacets);
         }
@@ -576,7 +600,10 @@ impl ProtocolFederator for OspfFederator {
         Ok(())
     }
 
-    fn can_merge_network_facets(&self, facets: &[Node]) -> Result<(), super::protocol::FederationError> {
+    fn can_merge_network_facets(
+        &self,
+        facets: &[Node],
+    ) -> Result<(), super::protocol::FederationError> {
         if facets.is_empty() {
             return Err(FederationError::EmptyFacets);
         }

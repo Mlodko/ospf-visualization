@@ -3,6 +3,7 @@ services:
     build: .
     container_name: r1
     privileged: true
+    hostname: r1
     volumes:
       - ./r1/frr.conf:/etc/frr/frr.conf
       - ./snmpd.conf:/etc/snmp/snmpd.conf
@@ -22,6 +23,7 @@ services:
     build: .
     container_name: r2
     privileged: true
+    hostname: r2
     volumes:
       - ./r2/frr.conf:/etc/frr/frr.conf
       - ./snmpd.conf:/etc/snmp/snmpd.conf
@@ -39,6 +41,7 @@ services:
     build: .
     container_name: r3
     privileged: true
+    hostname: r3
     volumes:
       - ./r3/frr.conf:/etc/frr/frr.conf
       - ./snmpd.conf:/etc/snmp/snmpd.conf
@@ -47,6 +50,8 @@ services:
     networks:
       net_123:
         ipv4_address: 172.21.123.3
+      net_37:
+        ipv4_address: 10.0.37.3
     cap_add:
       - NET_BIND_SERVICE
     ports:
@@ -56,6 +61,7 @@ services:
     build: .
     container_name: r4
     privileged: true
+    hostname: r4
     volumes:
       - ./r4/frr.conf:/etc/frr/frr.conf
       - ./snmpd.conf:/etc/snmp/snmpd.conf
@@ -75,6 +81,7 @@ services:
     build: .
     container_name: r5
     privileged: true
+    hostname: r5
     volumes:
       - ./r5/frr.conf:/etc/frr/frr.conf
       - ./snmpd.conf:/etc/snmp/snmpd.conf
@@ -94,6 +101,7 @@ services:
     build: .
     container_name: r6
     privileged: true
+    hostname: r6
     volumes:
       - ./r6/frr.conf:/etc/frr/frr.conf
       - ./snmpd.conf:/etc/snmp/snmpd.conf
@@ -113,6 +121,7 @@ services:
     build: .
     container_name: r7
     privileged: true
+    hostname: r7
     volumes:
       - ./r7/frr.conf:/etc/frr/frr.conf
       - ./snmpd.conf:/etc/snmp/snmpd.conf
@@ -123,6 +132,8 @@ services:
         ipv4_address: 10.0.67.7
       net_78:
         ipv4_address: 172.22.78.7
+      net_37:
+        ipv4_address: 10.0.37.7
     cap_add:
       - NET_BIND_SERVICE
     ports:
@@ -132,6 +143,7 @@ services:
     build: .
     container_name: r8
     privileged: true
+    hostname: r8
     volumes:
       - ./r8/frr.conf:/etc/frr/frr.conf
       - ./snmpd.conf:/etc/snmp/snmpd.conf
@@ -151,6 +163,10 @@ networks:
     ipam:
       config:
         - subnet: 172.21.123.0/24
+  net_37:
+    ipam:
+      config:
+        - subnet: 10.0.37.0/24
   net_14:
     ipam:
       config:

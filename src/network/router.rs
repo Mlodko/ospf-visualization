@@ -3,25 +3,33 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
-use serde::{Deserialize, Serialize, de::Error};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::network::node::ProtocolData;
+use crate::{network::node::ProtocolData, parsers::isis_parser::core_lsp::{NetAddress, SystemId}};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 pub enum RouterId {
     Ipv4(Ipv4Addr),
     Ipv6(Ipv6Addr),
-    IsIs([u8; 6]),
+    IsIs(SystemId),
     Other(String),
 }
+
+// Implementing Serialize and Deserialize manually because they're used as keys, which must be strings
 
 impl Serialize for RouterId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer {
-            serializer.serialize_str(&self.as_string())
+        let out = match self {
+            RouterId::Ipv4(addr) => format!("IPv4:{}", addr),
+            RouterId::Ipv6(addr) => format!("IPv6:{}", addr),
+            RouterId::IsIs(id) => format!("ISIS:{}", id),
+            RouterId::Other(string) => format!("Other:{}", string),
+        };
+        serializer.serialize_str(&out)
     }
 }
 
@@ -29,21 +37,35 @@ impl<'de> Deserialize<'de> for RouterId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de> {
-            let s: &str = <&str>::deserialize(deserializer)?;
-            if let Some(isis_id) = s.strip_prefix("isis:") {
-                let bytes = hex::decode(isis_id).map_err(D::Error::custom)?;
-                if bytes.len() != 6 {
-                    return Err(D::Error::custom("Invalid IS-IS ID length"));
+            let s = String::deserialize(deserializer)?;
+            
+            if let Some(pos) = s.find(':') {
+                let (kind, rest_with_colon) = s.split_at(pos);
+                let rest = &rest_with_colon[1..]; // skip the colon
+    
+                match kind {
+                    "IPv4" => rest.parse::<Ipv4Addr>()
+                        .map(RouterId::Ipv4)
+                        .map_err(serde::de::Error::custom),
+                    "IPv6" => rest.parse::<Ipv6Addr>()
+                        .map(RouterId::Ipv6)
+                        .map_err(serde::de::Error::custom),
+                    "ISIS" => SystemId::from_string(rest)
+                        .map(RouterId::IsIs)
+                        .map_err(serde::de::Error::custom),
+                    "Other" => Ok(RouterId::Other(rest.to_string())),
+                    other => Err(serde::de::Error::custom(format!("Unknown RouterId prefix: {}", other))),
                 }
-                return Ok(RouterId::IsIs(bytes.try_into().unwrap()))
-            };
-            if let Ok(ipv4) = s.parse::<Ipv4Addr>() {
-                return Ok(RouterId::Ipv4(ipv4));
+            } else {
+                // No prefix: try to be permissive — accept plain IPv4/IPv6 strings, otherwise store as Other
+                if let Ok(ipv4) = s.parse::<Ipv4Addr>() {
+                    Ok(RouterId::Ipv4(ipv4))
+                } else if let Ok(ipv6) = s.parse::<Ipv6Addr>() {
+                    Ok(RouterId::Ipv6(ipv6))
+                } else {
+                    Ok(RouterId::Other(s))
+                }
             }
-            if let Ok(ipv6) = s.parse::<Ipv6Addr>() {
-                return Ok(RouterId::Ipv6(ipv6));
-            }
-            Ok(RouterId::Other(s.to_string()))
     }
 }
 
@@ -65,7 +87,7 @@ impl RouterId {
         match self {
             Self::Ipv4(ip) => ip.to_string(),
             Self::Ipv6(ip) => ip.to_string(),
-            Self::IsIs(id) => format!("isis:{}", hex::encode(id)),
+            Self::IsIs(id) => format!("{}", id),
             Self::Other(string) => string.clone(),
         }
     }

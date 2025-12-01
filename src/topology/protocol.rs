@@ -5,19 +5,26 @@ This module defines traits for abstracting (routing protocol, acquisition method
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::{network::node::Node, topology::{TopologySource, source::{SnapshotSource, TopologyError}, store::SourceId}};
+use crate::{
+    network::node::Node,
+    topology::{
+        TopologySource,
+        source::{SnapshotSource, TopologyError},
+        store::SourceId,
+    },
+};
 
-#[derive(Debug)] 
+#[derive(Debug)]
 pub enum AcquisitionError {
     Transport(String),
-    Invalid(String)
+    Invalid(String),
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum ProtocolParseError {
     Malformed(String),
-    Unsupported(String)
+    Unsupported(String),
 }
 
 #[derive(Debug)]
@@ -30,15 +37,15 @@ impl From<AcquisitionError> for TopologyError {
     fn from(e: AcquisitionError) -> Self {
         match e {
             AcquisitionError::Transport(s) => TopologyError::Acquisition(s),
-            AcquisitionError::Invalid(s)   => TopologyError::Protocol(s),
+            AcquisitionError::Invalid(s) => TopologyError::Protocol(s),
         }
     }
 }
 impl From<ProtocolParseError> for TopologyError {
     fn from(e: ProtocolParseError) -> Self {
         match e {
-            ProtocolParseError::Malformed(s)  => TopologyError::Protocol(s),
-            ProtocolParseError::Unsupported(s)=> TopologyError::Protocol(s),
+            ProtocolParseError::Malformed(s) => TopologyError::Protocol(s),
+            ProtocolParseError::Unsupported(s) => TopologyError::Protocol(s),
         }
     }
 }
@@ -46,7 +53,7 @@ impl From<ProtocolTopologyError> for TopologyError {
     fn from(e: ProtocolTopologyError) -> Self {
         match e {
             ProtocolTopologyError::Conversion(s) => TopologyError::Protocol(s),
-            ProtocolTopologyError::Semantic(s)   => TopologyError::Protocol(s),
+            ProtocolTopologyError::Semantic(s) => TopologyError::Protocol(s),
         }
     }
 }
@@ -71,28 +78,32 @@ pub trait RoutingProtocol: Send + Sync {
 }
 
 pub struct Topology<P, S>
-where 
+where
     P: RoutingProtocol,
     S: AcquisitionSource<P>,
 {
     protocol: P,
-    source: S
+    source: S,
 }
 
 impl<P, S> Topology<P, S>
-where 
+where
     P: RoutingProtocol,
     S: AcquisitionSource<P>,
 {
     pub fn new(protocol: P, source: S) -> Self {
-        Self {protocol, source}
+        Self { protocol, source }
     }
-    
+
     #[allow(unused)]
-    pub fn protocol(&self) -> &P { &self.protocol }
-    
+    pub fn protocol(&self) -> &P {
+        &self.protocol
+    }
+
     #[allow(unused)]
-    pub fn source(&self) -> &S { &self.source }
+    pub fn source(&self) -> &S {
+        &self.source
+    }
 }
 
 /// ProtocolFederator performs cross-source semantic merging for a single protocol.
@@ -104,10 +115,10 @@ pub trait ProtocolFederator: Send + Sync {
 
     /// Merge multiple network nodes (same prefix) from different sources.
     fn merge_networks(&self, facets: &[Node]) -> Node;
-    
+
     /// Check if all provided router nodes are compatible with the federator.
     fn can_merge_router_facets(&self, facets: &[Node]) -> Result<(), FederationError>;
-    
+
     fn can_merge_network_facets(&self, facets: &[Node]) -> Result<(), FederationError>;
 }
 
@@ -127,34 +138,102 @@ pub enum FederationError {
 
 #[async_trait]
 impl<P, S> TopologySource for Topology<P, S>
-where 
+where
     P: RoutingProtocol,
     S: AcquisitionSource<P>,
 {
     async fn fetch_nodes(&mut self) -> Result<Vec<Node>, TopologyError> {
-        let raw = self.source.fetch_raw().await.map_err(TopologyError::from)?;
-        let mut nodes = Vec::new();
-        for record in raw {
-            let parsed_items = self.protocol.parse(record).map_err(TopologyError::from)?;
-            for item in parsed_items {
-                if let Some(node) = self.protocol.item_to_node(item).map_err(TopologyError::from)? {
-                    nodes.push(node);
+        println!("[topology] fetch_nodes: starting");
+
+        // Fetch raw records from the underlying acquisition source.
+        let raw = match self.source.fetch_raw().await {
+            Ok(r) => {
+                println!("[topology] fetch_raw: received {} raw record(s)", r.len());
+                r
+            }
+            Err(e) => {
+                eprintln!("[topology] fetch_raw error: {:?}", e);
+                return Err(TopologyError::from(e));
+            }
+        };
+
+        let mut nodes: Vec<Node> = Vec::new();
+
+        // Parse each raw record via the protocol implementation.
+        for (rec_idx, record) in raw.into_iter().enumerate() {
+            println!("[topology] parsing record #{}", rec_idx);
+            let parsed_items = match self.protocol.parse(record) {
+                Ok(items) => {
+                    println!(
+                        "[topology] parsed {} item(s) from record #{}",
+                        items.len(),
+                        rec_idx
+                    );
+                    items
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[topology] protocol.parse failed for record #{}: {:?}",
+                        rec_idx, e
+                    );
+                    return Err(TopologyError::from(e));
+                }
+            };
+
+            for (item_idx, item) in parsed_items.into_iter().enumerate() {
+                match self.protocol.item_to_node(item) {
+                    Ok(Some(node)) => {
+                        println!(
+                            "[topology] item_to_node: record #{}, item #{} -> produced node",
+                            rec_idx, item_idx
+                        );
+                        nodes.push(node);
+                    }
+                    Ok(None) => {
+                        println!(
+                            "[topology] item_to_node: record #{}, item #{} -> no node produced",
+                            rec_idx, item_idx
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[topology] item_to_node error: record #{}, item #{}: {:?}",
+                            rec_idx, item_idx, e
+                        );
+                        return Err(TopologyError::from(e));
+                    }
                 }
             }
         }
-        self.protocol.post_process(&mut nodes).map_err(TopologyError::from)?;
+
+        // Allow the protocol to post-process the collected nodes before returning.
+        println!(
+            "[topology] running protocol.post_process on {} node(s)",
+            nodes.len()
+        );
+        if let Err(e) = self.protocol.post_process(&mut nodes) {
+            eprintln!("[topology] protocol.post_process failed: {:?}", e);
+            return Err(TopologyError::from(e));
+        }
+        println!(
+            "[topology] post_process complete, returning {} node(s)",
+            nodes.len()
+        );
+
         Ok(nodes)
     }
 }
 
 #[async_trait]
-impl<P, S> SnapshotSource for Topology<P, S> 
+impl<P, S> SnapshotSource for Topology<P, S>
 where
     P: RoutingProtocol,
     S: AcquisitionSource<P>,
 {
     async fn fetch_source_id(&mut self) -> Result<SourceId, TopologyError> {
-        self.source.fetch_source_id().await.map_err(TopologyError::from)
+        self.source
+            .fetch_source_id()
+            .await
+            .map_err(TopologyError::from)
     }
 }
- 

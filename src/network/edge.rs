@@ -17,6 +17,7 @@ pub enum EdgeMetric {
     Ospf(u32),
     IsIs(u32),
     Other,
+    None
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

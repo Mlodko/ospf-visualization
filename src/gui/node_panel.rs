@@ -2,7 +2,7 @@ use egui::{
     self, CollapsingHeader, Context, Frame, Id, InnerResponse, Label, Order, Pos2, Response, Ui, Vec2
 };
 
-use crate::network::node::{OspfData, OspfPayload, ProtocolData};
+use crate::{network::node::{IsIsData, OspfData, OspfPayload, ProtocolData}, parsers::isis_parser::core_lsp::IsLevel};
 
 /// A reusable floating panel anchored near a node on the canvas.
 /// Designed to replace simple text labels with a fully interactive panel.
@@ -316,10 +316,31 @@ pub fn protocol_data_section(ui: &mut Ui, protocol_data: &Option<ProtocolData>) 
             let protocol_data = protocol_data;
             match protocol_data {
                 ProtocolData::Ospf(data) => ospf_protocol_data_section(ui, data),
+                ProtocolData::IsIs(data) => isis_protocol_data_section(ui, data),
                 _ => (),
             }
         });
     }
+}
+
+fn isis_protocol_data_section(ui: &mut Ui, data: &IsIsData) {
+    collapsible_section(ui, "IS-IS", false, |ui| {
+        ui.add(label_no_wrap(format!("IS Level: {}", match data.is_level {
+            IsLevel::Level1 => "Level 1",
+            IsLevel::Level2 => "Level 2",
+            IsLevel::Level1And2 => "Level 1/2",
+        })));
+        ui.add(label_no_wrap(format!("LSP ID: {}", &data.lsp_id)));
+        if let Some(net_address) = &data.net_address {
+            ui.add(label_no_wrap(format!("NET Address: {}", net_address)));
+        }
+        if !data.tlvs.is_empty() {
+            collapsible_section(ui, "TLVs", false, |ui| {
+                let tlv_names = data.tlvs.iter().map(|t| t.get_name());
+                bullet_list(ui, tlv_names);
+            });
+        }
+    });
 }
 
 fn ospf_protocol_data_section(ui: &mut Ui, data: &OspfData) {
