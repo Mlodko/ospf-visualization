@@ -11,7 +11,9 @@ use crate::parsers::isis_parser::topology::IsIsTopology;
 use crate::topology::ospf_protocol::OspfFederator;
 use crate::topology::protocol::FederationError;
 use crate::topology::source::SnapshotSource;
-use crate::topology::store::{AvailableFederators, MergeConfig, SourceId, SourceState, TopologyStore};
+use crate::topology::store::{
+    AvailableFederators, MergeConfig, SourceId, SourceState, TopologyStore,
+};
 use crate::{
     gui::node_shape::{
         LabelOverlay, NetworkGraphNodeShape, clear_area_highlight, clear_label_overlays,
@@ -183,7 +185,7 @@ impl App {
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
                     .max_height(300.0)
-                    .show(ui, |ui| {                      
+                    .show(ui, |ui| {
                         if ui.button("Print store data").clicked() {
                             println!("[app] Pressed print store data button");
                             let json = serde_json::to_string_pretty(&self.store);
@@ -192,7 +194,7 @@ impl App {
                                 Err(err) => println!("Error serializing store data: {}", err)
                             }
                         }
-                        
+
                         let mut rows: Vec<_> = self.store.sources_iter()
                             .map(|(src_id, state): (&SourceId, &SourceState)| {
                                 (
@@ -455,6 +457,10 @@ impl App {
                         ui.label("Password");
                         ui.text_edit_singleline(&mut self.ssh_password);
                     });
+                    ui.checkbox(
+                        &mut self.ssh_clear_sources_on_switch,
+                        "Clear previous sources on connect",
+                    );
                     if self.ssh_connect_pending {
                         ui.add_enabled_ui(false, |ui| {
                             _ = ui.button("Connect");
@@ -729,15 +735,15 @@ impl App {
                 LayoutState,
                 LayoutForceDirected<Layout>,
             >::new(&mut self.graph.graph)
-                    .with_navigations(
-                    &SettingsNavigation::default()
+            .with_navigations(
+                &SettingsNavigation::default()
                     .with_zoom_and_pan_enabled(false)
                     .with_fit_to_screen_enabled(true),
             )
-                .with_interactions(
-            &SettingsInteraction::default()
-                .with_node_selection_enabled(true)
-                .with_edge_clicking_enabled(true),
+            .with_interactions(
+                &SettingsInteraction::default()
+                    .with_node_selection_enabled(true)
+                    .with_edge_clicking_enabled(true),
             );
 
             // Add widget and obtain response so we can overlay labels afterwards.

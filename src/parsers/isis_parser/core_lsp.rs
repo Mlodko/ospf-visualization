@@ -537,7 +537,7 @@ impl Display for AreaAddress {
 }
 
 /// Indicates the IS-IS level at which an LSP or adjacency operates.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum IsLevel {
     /// Level 1 (intra-area)
     Level1,

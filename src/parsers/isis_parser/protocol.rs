@@ -9,9 +9,7 @@ use crate::{
         router::{Router, RouterId},
     },
     parsers::isis_parser::{
-        core_lsp::{
-            ExtendedIpReachabilityTlv, Lsp, LspError, LspId, NetAddress, SystemId, Tlv
-        },
+        core_lsp::{ExtendedIpReachabilityTlv, Lsp, LspError, LspId, NetAddress, SystemId, Tlv},
         frr_json_lsp::JsonLspdb,
         hostname::HostnameMap,
     },
@@ -110,11 +108,15 @@ impl RoutingProtocol for JsonIsisProtocol {
             None
         };
 
+        println!("Processing LSP of ID: {}", &item.lsp_id);
+
         let node_info = if item.lsp_id.is_pseudonode() {
             NodeInfo::Network(Self::lsp_to_network(&self, item)?)
         } else {
             NodeInfo::Router(Self::lsp_to_router(&self, item)?)
         };
+
+        println!("Processed successfully");
 
         Ok(Some(Node::new(node_info, label)))
     }
@@ -194,7 +196,7 @@ impl RoutingProtocol for JsonIsisProtocol {
                 net_idx,
                 router_subset.len()
             );
-            
+
             /*
             // Figure out network's NET address, find the DIS and copy its area address
             let network_net_address = if let NodeInfo::Network(net) = &nodes[net_idx].info {
@@ -291,25 +293,30 @@ impl RoutingProtocol for JsonIsisProtocol {
                 }
             }
 
-            let attached_routers: Vec<SystemId> = if let NodeInfo::Network(net) = &nodes[net_idx].info {
-                if let Some(ProtocolData::IsIs(data)) = &net.protocol_data {
-                    if let Some(Tlv::ExtendedReachability(tlv)) = data
-                        .tlvs
-                        .iter()
-                        .find(|tlv| matches!(tlv, Tlv::ExtendedReachability(_)))
-                    {
-                        // For each neighbor, prefer the area_address from the actual router node
-                        // (matched by SystemId) so RouterId::IsIs(NetAddress) matches the router node.
-                        tlv.neighbors
+            let attached_routers: Vec<SystemId> =
+                if let NodeInfo::Network(net) = &nodes[net_idx].info {
+                    if let Some(ProtocolData::IsIs(data)) = &net.protocol_data {
+                        if let Some(Tlv::ExtendedReachability(tlv)) = data
+                            .tlvs
                             .iter()
-                            .map(|neighbor| {
-                                neighbor.neighbor_id.clone()
-                            })
-                            .collect()
+                            .find(|tlv| matches!(tlv, Tlv::ExtendedReachability(_)))
+                        {
+                            // For each neighbor, prefer the area_address from the actual router node
+                            // (matched by SystemId) so RouterId::IsIs(NetAddress) matches the router node.
+                            tlv.neighbors
+                                .iter()
+                                .map(|neighbor| neighbor.neighbor_id.clone())
+                                .collect()
+                        } else {
+                            println!("Missing extended reachability TLV");
+                            return Err(ProtocolTopologyError::Semantic(
+                                "Missing extended reachability TLV".to_string(),
+                            ));
+                        }
                     } else {
-                        println!("Missing extended reachability TLV");
+                        println!("Missing ISIS protocol data");
                         return Err(ProtocolTopologyError::Semantic(
-                            "Missing extended reachability TLV".to_string(),
+                            "Missing ISIS protocol data".to_string(),
                         ));
                     }
                 } else {
@@ -317,13 +324,7 @@ impl RoutingProtocol for JsonIsisProtocol {
                     return Err(ProtocolTopologyError::Semantic(
                         "Missing ISIS protocol data".to_string(),
                     ));
-                }
-            } else {
-                println!("Missing ISIS protocol data");
-                return Err(ProtocolTopologyError::Semantic(
-                    "Missing ISIS protocol data".to_string(),
-                ));
-            };
+                };
 
             if let NodeInfo::Network(net) = &mut nodes[net_idx].info {
                 net.attached_routers = attached_routers
@@ -402,8 +403,7 @@ fn resolve_network_prefix(
         println!("[resolve_network_prefix] limiting router scan to {}", m);
     }
 
-    // Step 1: try to find and check DIS
-    // - if >=2 networks advertised skip this step, we can't find the correct TLV
+    // Step 1: try to find and check DIS (diagnostic only; no single-prefix shortcut)
     let dis_data: Option<IsIsData> =
         find_dis_router(&isis_data.lsp_id, router_nodes).and_then(|router| {
             if let Some(ProtocolData::IsIs(data)) = router.protocol_data {
@@ -413,7 +413,7 @@ fn resolve_network_prefix(
             }
         });
 
-    if let Some(dis_data) = dis_data {
+    if let Some(dis_data) = &dis_data {
         println!("[resolve_network_prefix] found candidate DIS data");
         if let Some(Tlv::ExtendedIpReachability(ext_ip_reach)) = dis_data
             .tlvs
@@ -425,30 +425,9 @@ fn resolve_network_prefix(
                 ext_ip_reach.neighbors.len()
             );
             if ext_ip_reach.neighbors.len() == 1 {
-                let ip_neighbor = &ext_ip_reach.neighbors[0];
-                if let Some(Tlv::ExtendedReachability(ext_reach)) = dis_data
-                    .tlvs
-                    .iter()
-                    .find(|t| matches!(t, Tlv::ExtendedReachability(_)))
-                {
-                    let any_matching = ext_reach
-                        .neighbors
-                        .iter()
-                        .map(|n| LspId::new_from(&n.neighbor_id, n.pseudonode_id, 0))
-                        .filter(LspId::is_pseudonode)
-                        .any(|lsp_id| lsp_id == isis_data.lsp_id);
-                    println!(
-                        "[resolve_network_prefix] DIS ExtendedReachability matching pseudonode?: {}",
-                        any_matching
-                    );
-                    if any_matching {
-                        println!(
-                            "[resolve_network_prefix] returning prefix from DIS neighbor: {}",
-                            ip_neighbor.prefix
-                        );
-                        return Ok(ip_neighbor.prefix.clone());
-                    }
-                }
+                println!(
+                    "[resolve_network_prefix] DIS ext-ip-reach has 1 entry; not using DIS-only shortcut"
+                );
             }
         }
     } else {
@@ -485,6 +464,8 @@ fn resolve_network_prefix(
                 }
                 None
             })
+            // Enforce level match to avoid mixing L1/L2 data
+            .filter(|data| data.is_level == isis_data.is_level)
             .filter(|data| neighbor_lsp_ids.contains(&data.lsp_id))
             .collect();
 
@@ -492,6 +473,121 @@ fn resolve_network_prefix(
             "[resolve_network_prefix] collected {} neighbor IS-IS data entries",
             neighbor_isis_data.len()
         );
+
+        // If same-level neighbors are insufficient, try a cross-level fallback:
+        // gather neighbor IS-IS data ignoring level, and attempt intersection there.
+        if neighbor_isis_data.len() < 2 {
+            println!(
+                "[resolve_network_prefix] insufficient same-level neighbors ({}); trying cross-level fallback",
+                neighbor_isis_data.len()
+            );
+
+            // Build cross-level candidate set: any level, but still restricted to neighbor_lsp_ids.
+            let neighbor_isis_data_any_level: Vec<&IsIsData> = router_nodes
+                .iter()
+                .cloned()
+                .take(max_router_consider.unwrap_or(usize::MAX))
+                .filter_map(|node| {
+                    if let NodeInfo::Router(router) = &node.info {
+                        if let Some(ProtocolData::IsIs(data)) = &router.protocol_data {
+                            return Some(data);
+                        }
+                    }
+                    None
+                })
+                .filter(|data| neighbor_lsp_ids.contains(&data.lsp_id))
+                .collect();
+
+            // If DIS data exists and is part of the neighbor set but missing, include it.
+            let mut neighbor_isis_data_fallback: Vec<&IsIsData> = neighbor_isis_data_any_level;
+            if let Some(dis) = dis_data.as_ref() {
+                if neighbor_lsp_ids.contains(&dis.lsp_id) {
+                    // ensure uniqueness by lsp_id
+                    let has_dis = neighbor_isis_data_fallback
+                        .iter()
+                        .any(|d| d.lsp_id == dis.lsp_id);
+                    if !has_dis {
+                        neighbor_isis_data_fallback.push(dis);
+                    }
+                }
+            }
+
+            println!(
+                "[resolve_network_prefix] cross-level candidates: {}",
+                neighbor_isis_data_fallback.len()
+            );
+
+            if neighbor_isis_data_fallback.len() >= 2 {
+                let neighbor_ext_ip_reaches: Vec<_> = neighbor_isis_data_fallback
+                    .iter()
+                    .filter_map(|data| {
+                        if let Some(Tlv::ExtendedIpReachability(reach)) = data
+                            .tlvs
+                            .iter()
+                            .find(|t| matches!(t, Tlv::ExtendedIpReachability(_)))
+                        {
+                            Some(reach)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                println!(
+                    "[resolve_network_prefix] cross-level ext-ip-reach TLVs: {}",
+                    neighbor_ext_ip_reaches.len()
+                );
+
+                if neighbor_ext_ip_reaches.len() >= 2 {
+                    // Compute intersection across TLVs
+                    let mut iter = neighbor_ext_ip_reaches.iter();
+                    if let Some(first) = iter.next() {
+                        let mut prefix_set: HashSet<&IpNetwork> =
+                            first.neighbors.iter().map(|n| &n.prefix).collect();
+                        for reach in iter {
+                            let new_set: HashSet<&IpNetwork> =
+                                reach.neighbors.iter().map(|n| &n.prefix).collect();
+                            prefix_set = prefix_set.intersection(&new_set).copied().collect();
+                            if prefix_set.is_empty() {
+                                break;
+                            }
+                        }
+                        if !prefix_set.is_empty() {
+                            // Choose best candidate: longest prefix length, then lexicographically smallest.
+                            let mut best: Option<IpNetwork> = None;
+                            for p in prefix_set.into_iter() {
+                                match &best {
+                                    None => best = Some(p.clone()),
+                                    Some(curr) => {
+                                        let p_len = p.prefix();
+                                        let c_len = curr.prefix();
+                                        if p_len > c_len
+                                            || (p_len == c_len && p.to_string() < curr.to_string())
+                                        {
+                                            best = Some(p.clone());
+                                        }
+                                    }
+                                }
+                            }
+                            if let Some(prefix) = best {
+                                println!(
+                                    "[resolve_network_prefix] cross-level common prefix: {}",
+                                    prefix
+                                );
+                                return Ok(prefix);
+                            }
+                        }
+                    }
+                }
+            }
+
+            println!(
+                "[resolve_network_prefix] cross-level fallback failed; leaving prefix unresolved"
+            );
+            return Err(ProtocolTopologyError::Semantic(
+                "Couldn't resolve network's prefix (insufficient corroboration)".to_string(),
+            ));
+        }
 
         let neighbor_ext_ip_reaches: Vec<_> = neighbor_isis_data
             .iter()
@@ -542,7 +638,21 @@ fn resolve_network_prefix(
                 }
             }
 
-            prefix_set.into_iter().map(|p| p.clone()).next()
+            // Choose the best candidate: longest prefix length, then lexicographically smallest.
+            let mut best: Option<IpNetwork> = None;
+            for p in prefix_set.into_iter() {
+                match &best {
+                    None => best = Some(p.clone()),
+                    Some(curr) => {
+                        let p_len = p.prefix();
+                        let c_len = curr.prefix();
+                        if p_len > c_len || (p_len == c_len && p.to_string() < curr.to_string()) {
+                            best = Some(p.clone());
+                        }
+                    }
+                }
+            }
+            best
         }
     }
 
@@ -555,11 +665,11 @@ fn resolve_network_prefix(
 
 mod tests {
     #[allow(unused)]
-    use serde_json::json;
+    use super::*;
     #[allow(unused)]
     use crate::parsers::isis_parser::frr_json_lsp::JsonLsp;
     #[allow(unused)]
-    use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_lsp_to_router() {
