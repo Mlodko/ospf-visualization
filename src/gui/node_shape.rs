@@ -1,16 +1,96 @@
 use std::cell::RefCell;
+use std::collections::HashSet;
 
-use egui::{
-    Color32, Pos2, Shape, Stroke, Vec2,
-    epaint::CircleShape,
-};
+use egui::{Color32, Pos2, Shape, Stroke, Vec2, epaint::CircleShape};
+use egui::{ColorImage, Context, TextureId, TextureOptions};
 use egui_graphs::{DisplayNode, DrawContext, NodeProps};
-use petgraph::{EdgeType, stable_graph::IndexType};
 
+use petgraph::{EdgeType, stable_graph::IndexType};
+use tiny_skia::Pixmap;
+use usvg::Tree;
+use uuid::Uuid;
+
+use egui::TextureHandle;
+
+use crate::network::node::{Node, NodeInfo};
 use crate::network::router::RouterId;
-use crate::network::{
-    node::{Node, NodeInfo}
-};
+
+thread_local! {
+    static ROUTER_TEX: RefCell<Option<TextureHandle>> = RefCell::new(None);
+    static NETWORK_TEX: RefCell<Option<TextureHandle>> = RefCell::new(None);
+}
+
+// Rasterize SVG bytes to a square RGBA buffer at the given target_px (keeps aspect)
+fn rasterize_svg(svg_bytes: &[u8], target_px: u32) -> Option<ColorImage> {
+    let opt = usvg::Options::default();
+    let tree = Tree::from_data(svg_bytes, &opt).ok()?;
+    // Fit so that the longest side is target_px; preserve aspect
+    let size = tree.size();
+    let int = size.to_int_size();
+    let max_side = int.width().max(int.height()).max(1) as f32;
+    let scale = (target_px as f32 / max_side).max(1.0 / max_side); // avoid 0
+
+    let w = ((int.width() as f32) * scale).ceil().max(1.0) as u32;
+    let h = ((int.height() as f32) * scale).ceil().max(1.0) as u32;
+
+    let mut pixmap = Pixmap::new(w, h)?;
+    let transform = tiny_skia::Transform::from_scale(scale, scale);
+    let mut pm = pixmap.as_mut();
+    resvg::render(&tree, transform, &mut pm);
+
+    let data = pixmap.data().to_vec();
+    let image = ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &data);
+    Some(image)
+}
+
+fn ensure_router(ctx: &Context) -> TextureHandle {
+    ROUTER_TEX.with(|slot| {
+        if let Some(tex) = slot.borrow().as_ref() {
+            return tex.clone();
+        }
+        let svg = include_bytes!("resources/router-node.svg");
+        // Choose a base texture resolution; 64–128 px works well
+        let img = rasterize_svg(svg, 96).expect("Failed to rasterize router-node.svg");
+        let tex = ctx.load_texture("router-node", img, TextureOptions::LINEAR);
+        *slot.borrow_mut() = Some(tex.clone());
+        tex
+    })
+}
+
+fn ensure_network(ctx: &Context) -> TextureHandle {
+    NETWORK_TEX.with(|slot| {
+        if let Some(tex) = slot.borrow().as_ref() {
+            return tex.clone();
+        }
+        let svg = include_bytes!("resources/network-node.svg");
+        let img = rasterize_svg(svg, 96).expect("Failed to rasterize network-node.svg");
+        let tex = ctx.load_texture("network-node", img, TextureOptions::LINEAR);
+        *slot.borrow_mut() = Some(tex.clone());
+        tex
+    })
+}
+
+pub fn router_texture_id(ctx: &Context) -> TextureId {
+    ensure_router(ctx).id()
+}
+pub fn network_texture_id(ctx: &Context) -> TextureId {
+    ensure_network(ctx).id()
+}
+
+#[derive(Debug, Clone)]
+enum NodeType {
+    Router,
+    Network,
+}
+
+impl From<&NodeInfo> for NodeType {
+    fn from(node_info: &NodeInfo) -> Self {
+        match node_info {
+            NodeInfo::Router(_) => NodeType::Router,
+            NodeInfo::Network(_) => NodeType::Network,
+        }
+    }
+}
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -27,6 +107,7 @@ pub struct NetworkGraphNodeShape {
     pub source_id: Option<RouterId>,
     pub node_uuid: uuid::Uuid, // stable id for animation
     pub node_router_id: Option<RouterId>,
+    node_type: NodeType,
 }
 
 // Thread-local overlay collector populated during shapes() and consumed after the GraphView is drawn.
@@ -45,6 +126,16 @@ thread_local! {
     static HOVERED_SOURCE_ID: RefCell<Option<RouterId>> = RefCell::new(None);
     // Global toggle for partition highlighting
     static HIGHLIGHT_ENABLED: RefCell<bool> = RefCell::new(true);
+
+    static PATH_HIGHLIGHT: RefCell<HashSet<Uuid>> = RefCell::new(HashSet::new());
+}
+
+pub fn clear_path_highlight() {
+    PATH_HIGHLIGHT.with(|v| v.borrow_mut().clear());
+}
+
+pub fn set_path_highlight(uuids: impl Iterator<Item = Uuid>) {
+    PATH_HIGHLIGHT.with(|v| v.borrow_mut().extend(uuids))
 }
 
 /// Clear the hovered-area state at the start of a frame.
@@ -86,11 +177,12 @@ impl From<NodeProps<Node>> for NetworkGraphNodeShape {
             dragged: node_props.dragged,
             hovered: node_props.hovered,
             highlighted: false,
-            radius: 5f32,
+            radius: 10f32,
             external: false,
             source_id: payload.source_id.clone(),
             node_uuid: payload.id,
             node_router_id: router_id,
+            node_type: NodeType::from(&payload.info),
         }
     }
 }
@@ -105,7 +197,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
     }
 
     fn shapes(&mut self, ctx: &egui_graphs::DrawContext) -> Vec<Shape> {
-        let mut res = Vec::with_capacity(2);
+        let mut res = Vec::with_capacity(4);
         let circle_center = ctx.meta.canvas_to_screen_pos(self.pos);
         let circle_radius = ctx.meta.canvas_to_screen_size(self.radius);
 
@@ -125,7 +217,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
                 .is_some_and(|id| hovered_src.is_some_and(|src_id| *id == src_id));
 
         // Base fill (tint if highlighted)
-        let fill = self.effective_color(ctx);
+        let fill = Color32::TRANSPARENT;
 
         // Smooth fade ring ONLY for origin
         let fade_highlighted = ctx.ctx.animate_bool(
@@ -138,6 +230,17 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
             color: Color32::YELLOW.linear_multiply(fade_highlighted),
         };
 
+        // Draw node icon beneath highlight rings
+        let half = circle_radius;
+        let rect = egui::Rect::from_center_size(circle_center, Vec2::new(half * 2.0, half * 2.0));
+        let tex_id: TextureId = match self.node_type {
+            NodeType::Router => router_texture_id(ctx.ctx),
+            NodeType::Network => network_texture_id(ctx.ctx),
+        };
+        let uv = egui::Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
+        res.push(Shape::image(tex_id, rect, uv, self.effective_color(ctx)));
+
+        // Base circle stroke (for highlight fade ring)
         res.push(
             CircleShape {
                 center: circle_center,
@@ -179,6 +282,31 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
                     color: fill,
                 });
             });
+        }
+
+        let path_highlighted: bool = PATH_HIGHLIGHT.with_borrow(|v| v.contains(&self.node_uuid));
+
+        let fade_path = ctx.ctx.animate_bool(
+            egui::Id::new(("path_highlight", self.node_uuid)),
+            path_highlighted,
+        );
+
+        if fade_path > 0.01 {
+            let ring_radius = circle_radius + (2.5 + 0.1 * fade_path);
+            let ring_color = Color32::PURPLE.linear_multiply(fade_path);
+            let ring_stroke = Stroke {
+                width: 2.0 * fade_path,
+                color: ring_color,
+            };
+            res.push(
+                CircleShape {
+                    center: circle_center,
+                    radius: ring_radius,
+                    fill: Color32::TRANSPARENT,
+                    stroke: ring_stroke,
+                }
+                .into(),
+            );
         }
 
         res
@@ -227,7 +355,7 @@ impl NetworkGraphNodeShape {
         }
         base
     }
-    
+
     #[allow(dead_code)]
     fn effective_stroke(&self, _ctx: &DrawContext) -> Stroke {
         if self.highlighted {
@@ -240,7 +368,6 @@ impl NetworkGraphNodeShape {
         }
     }
 }
-
 
 fn closest_point_on_circle(center: Pos2, radius: f32, dir: Vec2) -> Pos2 {
     center + dir.normalized() * (radius + 1.0)

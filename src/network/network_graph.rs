@@ -8,13 +8,14 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    gui::node_shape::NetworkGraphNodeShape,
+    gui::{edge_shape::NetworkGraphEdgeShape, node_shape::NetworkGraphNodeShape},
     network::{
-        edge::{Edge, EdgeKind, EdgeMetric},
+        edge::{Edge, EdgeKind, EdgeMetric, ManualEdgeSpec, UndirectedEdgeKey},
         node::{Node, NodeInfo, OspfPayload, ProtocolData},
         router::RouterId,
         // removed unused RouterId import
-    }, parsers::isis_parser::core_lsp::Tlv,
+    },
+    parsers::isis_parser::core_lsp::Tlv,
 };
 
 const IF_SKIP_FUNCTIONALLY_P2P_NETWORKS: bool = false;
@@ -26,8 +27,17 @@ const IF_SKIP_FUNCTIONALLY_P2P_NETWORKS: bool = false;
 
 #[allow(dead_code)]
 pub struct NetworkGraph {
-    pub graph: Graph<Node, crate::network::edge::Edge, Directed, DefaultIx, NetworkGraphNodeShape>,
+    pub graph: Graph<
+        Node,
+        crate::network::edge::Edge,
+        Directed,
+        DefaultIx,
+        NetworkGraphNodeShape,
+        NetworkGraphEdgeShape,
+    >,
     pub node_id_to_index_map: HashMap<Uuid, NodeIndex>,
+    manual_edges: HashMap<UndirectedEdgeKey, ManualEdgeSpec>,
+    manual_removed_edges: HashSet<UndirectedEdgeKey>,
 }
 
 impl Default for NetworkGraph {
@@ -35,6 +45,8 @@ impl Default for NetworkGraph {
         Self {
             graph: Graph::new(StableGraph::new()),
             node_id_to_index_map: HashMap::new(),
+            manual_edges: HashMap::new(),
+            manual_removed_edges: HashSet::new(),
         }
     }
 }
@@ -86,6 +98,31 @@ impl NetworkGraph {
                                     EdgeMetric::None
                                 }
                             }
+                            Some(ProtocolData::IsIs(isis_data)) => {
+                                if let Some(Tlv::ExtendedReachability(tlv)) = isis_data
+                                    .tlvs
+                                    .iter()
+                                    .find(|tlv| matches!(tlv, Tlv::ExtendedReachability(_)))
+                                {
+                                    let metrics_by_uuid: HashMap<Uuid, u32> = tlv
+                                        .neighbors
+                                        .iter()
+                                        .map(|n| {
+                                            (
+                                                RouterId::IsIs(n.neighbor_id.clone()).to_uuidv5(),
+                                                n.metric,
+                                            )
+                                        })
+                                        .collect();
+                                    if let Some(metric) = metrics_by_uuid.get(&dst_uuid) {
+                                        EdgeMetric::IsIs(*metric as u32)
+                                    } else {
+                                        EdgeMetric::None
+                                    }
+                                } else {
+                                    EdgeMetric::None
+                                }
+                            }
                             None => EdgeMetric::None,
                             _ => panic!("Unexpected protocol data"),
                         }
@@ -96,6 +133,10 @@ impl NetworkGraph {
                     EdgeMetric::None
                 }
             };
+
+            if let EdgeMetric::None = metric {
+                println!("Metric is None");
+            }
             if let Some(&dst_idx) = node_id_to_index_map.get(&dst_uuid) {
                 let edge_src_to_dst = Edge {
                     source_id: src_uuid,
@@ -179,6 +220,7 @@ impl NetworkGraph {
         Self {
             graph,
             node_id_to_index_map,
+            ..Default::default()
         }
     }
 
@@ -287,6 +329,7 @@ impl NetworkGraph {
         self.clear_all_edges();
         let edge_specs = self.collect_edge_specs_live();
         self.materialize_edges(edge_specs, "[network_graph::reconcile]");
+        self.apply_overlay_after_reconcile();
     }
 
     /// Helper: remove all edges from the graph.
@@ -412,71 +455,103 @@ impl NetworkGraph {
     fn materialize_edges(&mut self, specs: Vec<(NodeIndex, Uuid, Uuid, EdgeKind)>, log_tag: &str) {
         let mut added = 0usize;
         for (src_idx, src_uuid, dst_uuid, kind) in specs {
-            let metric = {
-                if let Some(src_node) = self.graph.node(src_idx).map(|node| node.payload()) {
-                    if let NodeInfo::Router(router) = &src_node.info {
-                        match &router.protocol_data {
-                            Some(ProtocolData::Ospf(ospf_data)) => {
-                                if let OspfPayload::Router(payload) = &ospf_data.payload {
-                                    let metric_by_uuid: HashMap<Uuid, u16> = payload
-                                        .link_metrics
-                                        .iter()
-                                        .map(|(ip, metric)| {
-                                            (RouterId::Ipv4(*ip).to_uuidv5(), *metric)
-                                        })
-                                        .collect();
-                                    if let Some(metric) = metric_by_uuid.get(&dst_uuid) {
-                                        EdgeMetric::Ospf(*metric as u32)
+            let metric = match kind {
+                // Membership edges don't carry a metric
+                EdgeKind::Membership => {
+                    // Attach IS-IS metrics to membership (Router -> Network) edges using Extended IP Reachability TLVs (#135)
+                    if let Some(src_node) = self.graph.node(src_idx).map(|n| n.payload()) {
+                        if let NodeInfo::Router(router) = &src_node.info {
+                            if let Some(ProtocolData::IsIs(isis)) = &router.protocol_data {
+                                if let Some(&dst_idx) = self.node_id_to_index_map.get(&dst_uuid) {
+                                    if let Some(dst_node) =
+                                        self.graph.node(dst_idx).map(|n| n.payload())
+                                    {
+                                        if let NodeInfo::Network(network) = &dst_node.info {
+                                            // Find a matching prefix in Extended IP Reachability TLVs
+                                            if let Some(Tlv::ExtendedIpReachability(ext_ip)) =
+                                                isis.tlvs.iter().find(|t| {
+                                                    matches!(t, Tlv::ExtendedIpReachability(_))
+                                                })
+                                            {
+                                                if let Some(nbr) =
+                                                    ext_ip.neighbors.iter().find(|n| {
+                                                        n.prefix == network.ip_address && n.up_down
+                                                    })
+                                                {
+                                                    EdgeMetric::IsIs(nbr.metric)
+                                                } else {
+                                                    EdgeMetric::None
+                                                }
+                                            } else {
+                                                EdgeMetric::None
+                                            }
+                                        } else {
+                                            EdgeMetric::None
+                                        }
                                     } else {
                                         EdgeMetric::None
                                     }
                                 } else {
                                     EdgeMetric::None
                                 }
+                            } else {
+                                EdgeMetric::None
                             }
-                            Some(ProtocolData::IsIs(data)) => {
-                                // We only consider IS reachability, ignoring IP reachability TLVs
-                                let metrics_by_uuid: HashMap<Uuid, u32> = {
-                                    let mut metrics = HashMap::new();
-                                    if let Some(Tlv::ExtendedReachability(ext_reach)) = data.tlvs.iter().find(|t| matches!(t, Tlv::ExtendedReachability(_))) {
-                                        ext_reach.neighbors.iter()
-                                            .map(|neighbor| {
-                                                let neighbor_uuid = RouterId::IsIs(neighbor.neighbor_id.clone()).to_uuidv5();
-                                                (neighbor_uuid, neighbor.metric)
-                                            })
-                                            .for_each(|(uuid, metric)| {
-                                                metrics.insert(uuid, metric);
-                                            })
-                                    }
-                                    if let Some(Tlv::IsReachability(is_reach)) = data.tlvs.iter().find(|t| matches!(t, Tlv::IsReachability(_))) {
-                                        is_reach.neighbors_iter()
-                                            .map(|neighbor| {
-                                                let neighbor_uuid = RouterId::IsIs(neighbor.system_id.clone()).to_uuidv5();
-                                                (neighbor_uuid, neighbor.metric)
-                                            })
-                                            .for_each(|(uuid, metric)| {
-                                                if !metrics.contains_key(&uuid) {
-                                                    metrics.insert(uuid, metric);
-                                                }
-                                            })
-                                    }
-                                    metrics
-                                };
-                                if let Some(metric) = metrics_by_uuid.get(&dst_uuid) {
-                                    EdgeMetric::IsIs(*metric)
-                                } else {
-                                    EdgeMetric::None
-                                }
-                            }
-                            None => EdgeMetric::None,
-                            _ => panic!("Unexpected protocol data"),
+                        } else {
+                            EdgeMetric::None
                         }
                     } else {
                         EdgeMetric::None
                     }
-                } else {
-                    EdgeMetric::None
                 }
+                // For OSPF logical reachability (ABR -> Network), use the Summary metric
+                EdgeKind::LogicalReachability => {
+                    if let Some(src_node) = self.graph.node(src_idx).map(|n| n.payload()) {
+                        if let NodeInfo::Router(router) = &src_node.info {
+                            if let Some(&dst_idx) = self.node_id_to_index_map.get(&dst_uuid) {
+                                if let Some(dst_node) =
+                                    self.graph.node(dst_idx).map(|n| n.payload())
+                                {
+                                    if let NodeInfo::Network(network) = &dst_node.info {
+                                        if let Some(ProtocolData::Ospf(ospf_net)) =
+                                            &network.protocol_data
+                                        {
+                                            if let OspfPayload::Network(net_payload) =
+                                                &ospf_net.payload
+                                            {
+                                                if let Some(s) = net_payload
+                                                    .summaries
+                                                    .iter()
+                                                    .find(|s| s.origin_abr == router.id)
+                                                {
+                                                    EdgeMetric::Ospf(s.metric)
+                                                } else {
+                                                    EdgeMetric::None
+                                                }
+                                            } else {
+                                                EdgeMetric::None
+                                            }
+                                        } else {
+                                            EdgeMetric::None
+                                        }
+                                    } else {
+                                        EdgeMetric::None
+                                    }
+                                } else {
+                                    EdgeMetric::None
+                                }
+                            } else {
+                                EdgeMetric::None
+                            }
+                        } else {
+                            EdgeMetric::None
+                        }
+                    } else {
+                        EdgeMetric::None
+                    }
+                }
+                // Default: no metric
+                _ => EdgeMetric::None,
             };
             if let Some(&dst_idx) = self.node_id_to_index_map.get(&dst_uuid) {
                 let edge_src_to_dst = Edge {
@@ -499,6 +574,142 @@ impl NetworkGraph {
             }
         }
         eprintln!("{log_tag} materialized {added} edges");
+    }
+
+    pub fn add_manual_edge(&mut self, a: Uuid, b: Uuid, kind: EdgeKind, metric: u32) {
+        let key = UndirectedEdgeKey::new(a, b, kind.clone());
+        let spec = ManualEdgeSpec::new(key, metric);
+
+        self.manual_edges.insert(key, spec);
+
+        self.manual_removed_edges.remove(&key);
+
+        self.apply_manual_edge_live(key);
+    }
+
+    pub fn update_manual_edge(&mut self, a: Uuid, b: Uuid, kind: EdgeKind, metric: u32) {
+        let key = UndirectedEdgeKey::new(a, b, kind.clone());
+        if let Some(spec) = self.manual_edges.get_mut(&key) {
+            spec.set_metric(metric);
+            self.apply_manual_edge_live(key);
+        } else {
+            println!("Edge not found")
+        }
+    }
+
+    /// Hide existing base edge until manual_removed is cleared
+    pub fn supress_base_edge(&mut self, a: Uuid, b: Uuid, kind: EdgeKind) {
+        let key = UndirectedEdgeKey::new(a, b, kind.clone());
+        self.manual_edges.remove(&key);
+        self.manual_removed_edges.insert(key);
+        let (x, y) = key.endpoints();
+        self.remove_edge_pair_live(x, y, kind);
+    }
+
+    /// Remove only manually added edge: base edge may reappear
+    pub fn remove_manual_edge(&mut self, a: Uuid, b: Uuid, kind: EdgeKind) {
+        let key = UndirectedEdgeKey::new(a, b, kind.clone());
+        self.manual_edges.remove(&key);
+        self.remove_edge_pair_live(a, b, kind);
+    }
+
+    pub fn any_manual_changes(&self) -> bool {
+        !self.manual_edges.is_empty() || !self.manual_removed_edges.is_empty()
+    }
+
+    pub fn clear_manual_changes(&mut self) {
+        // Remove manual edges
+        let mut to_remove = Vec::new();
+        for (ei, e) in self.graph.edges_iter() {
+            if e.payload().protocol_tag.as_deref() == Some("MANUAL") {
+                to_remove.push(ei);
+            }
+        }
+        for ei in &to_remove {
+            let _ = self.graph.remove_edge(*ei);
+        }
+        self.manual_edges.clear();
+        self.manual_removed_edges.clear();
+
+        // Rebuild base edges
+        self.clear_all_edges();
+        let specs = self.collect_edge_specs_live();
+        self.materialize_edges(specs, "[network_graph::clear_manual_changes]");
+        // Overlay skip (empty)
+        eprintln!(
+            "[network_graph] manual overlay cleared; removed {} manual edges",
+            to_remove.len()
+        );
+    }
+
+    fn apply_manual_edge_live(&mut self, key: UndirectedEdgeKey) {
+        // Ensure no duplicates: remove any existing edges for this pair/kind (base or prior manual)
+        let (a, b) = key.endpoints();
+        self.remove_edge_pair_live(a, b, key.kind.clone());
+
+        // Add both directions with metric and protocol_tag "MANUAL"
+        if let (Some(&ai), Some(&bi)) = (
+            self.node_id_to_index_map.get(&a),
+            self.node_id_to_index_map.get(&b),
+        ) {
+            let spec = self.manual_edges.get(&key).cloned();
+            if let Some(spec) = spec {
+                let e_ab = Edge {
+                    source_id: a,
+                    destination_id: b,
+                    kind: key.kind.clone(),
+                    metric: spec.metric.clone(),
+                    protocol_tag: Some(spec.protocol_tag.clone()),
+                };
+                let e_ba = Edge {
+                    source_id: b,
+                    destination_id: a,
+                    kind: key.kind.clone(),
+                    metric: spec.metric,
+                    protocol_tag: Some(spec.protocol_tag),
+                };
+                self.graph.add_edge(ai, bi, e_ab);
+                self.graph.add_edge(bi, ai, e_ba);
+            }
+        }
+    }
+
+    pub fn is_manual_edge(&self, a: Uuid, b: Uuid, kind: EdgeKind) -> bool {
+        self.manual_edges
+            .contains_key(&UndirectedEdgeKey::new(a, b, kind))
+    }
+
+    fn remove_edge_pair_live(&mut self, a: Uuid, b: Uuid, kind: EdgeKind) {
+        // Find and remove both directions matching (a->b) and (b->a) with given kind
+        let mut to_remove = Vec::new();
+        for (ei, e) in self.graph.edges_iter() {
+            if e.payload().source_id == a
+                && e.payload().destination_id == b
+                && e.payload().kind == kind
+            {
+                to_remove.push(ei);
+            } else if e.payload().source_id == b
+                && e.payload().destination_id == a
+                && e.payload().kind == kind
+            {
+                to_remove.push(ei);
+            }
+        }
+        for ei in to_remove {
+            let _ = self.graph.remove_edge(ei);
+        }
+    }
+
+    pub fn apply_overlay_after_reconcile(&mut self) {
+        // 1) Remove overridden base edges
+        for key in self.manual_removed_edges.clone() {
+            let (a, b) = key.endpoints();
+            self.remove_edge_pair_live(a, b, key.kind.clone());
+        }
+        // 2) Add manual edges with stored metrics
+        for key in self.manual_edges.keys().cloned().collect::<Vec<_>>() {
+            self.apply_manual_edge_live(key);
+        }
     }
 }
 

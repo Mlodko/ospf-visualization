@@ -2,9 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::data_aquisition::ssh::SshClient;
+use crate::gui::edge_anim;
+use crate::gui::edge_shape::{self, NetworkGraphEdgeShape};
 use crate::gui::node_panel::{
     FloatingNodePanel, bullet_list, collapsible_section, protocol_data_section,
 };
+use crate::gui::node_shape::{self, clear_path_highlight};
+use crate::network::edge::EdgeKind;
 use crate::network::node::NodeInfo;
 
 use crate::parsers::isis_parser::topology::IsIsTopology;
@@ -24,7 +28,8 @@ use crate::{
 };
 use eframe::egui;
 use egui::{
-    CentralPanel, Checkbox, CollapsingHeader, ComboBox, Context, Id, Separator, SidePanel, Ui,
+    Button, CentralPanel, Checkbox, CollapsingHeader, ComboBox, Context, Id, Separator, SidePanel,
+    Ui,
 };
 use egui_extras::{Column, TableBuilder};
 use egui_graphs::{
@@ -32,8 +37,10 @@ use egui_graphs::{
     FruchtermanReingoldWithCenterGravityState, LayoutForceDirected, SettingsInteraction,
     SettingsNavigation, SettingsStyle,
 };
+use petgraph::algo::bidirectional_dijkstra;
 use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex};
 use tokio::runtime::Runtime;
+use uuid::Uuid;
 
 pub fn main(rt: Arc<Runtime>) {
     let native_options = eframe::NativeOptions::default();
@@ -44,7 +51,10 @@ pub fn main(rt: Arc<Runtime>) {
             let app = rt.block_on(App::new(cc, rt.clone()));
 
             match app {
-                Ok(app) => Ok(Box::new(app) as Box<dyn eframe::App>),
+                Ok(app) => {
+                    egui_extras::install_image_loaders(&cc.egui_ctx);
+                    Ok(Box::new(app) as Box<dyn eframe::App>)
+                }
                 Err(e) => Err(e.into()),
             }
 
@@ -80,6 +90,13 @@ impl std::fmt::Display for RuntimeError {
 
 impl std::error::Error for RuntimeError {}
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EditTool {
+    None,
+    Snip,
+    Draw,
+}
+
 struct App {
     #[allow(unused)]
     topo: Box<dyn SnapshotSource>,
@@ -91,6 +108,17 @@ struct App {
     #[allow(unused)]
     runtime: Arc<Runtime>,
     layout_state: LayoutState,
+
+    pending_destroy: Vec<(Uuid, Uuid, EdgeKind, bool)>,
+
+    path_mode: bool,
+    path_start: Option<NodeIndex>,
+    path_end: Option<NodeIndex>,
+
+    edit_tool: EditTool,
+    draw_first: Option<NodeIndex>,
+    selected_edge: Option<(Uuid, Uuid, EdgeKind)>,
+    previous_manual_metric: Option<u32>,
 
     // SNMP source switching state
     snmp_host: String,
@@ -151,6 +179,16 @@ impl App {
             selected_node: Option::default(),
             runtime,
             layout_state,
+            selected_edge: None,
+            pending_destroy: Vec::new(),
+
+            path_mode: false,
+            path_start: None,
+            path_end: None,
+            previous_manual_metric: None,
+
+            edit_tool: EditTool::None,
+            draw_first: None,
 
             snmp_host: "127.0.0.1".to_string(),
             snmp_port: 1161,
@@ -290,11 +328,137 @@ impl App {
             });
     }
 
+    fn render_path_controls(&mut self, ui: &mut Ui) {
+        ui.checkbox(&mut self.path_mode, "Enable Path Mode");
+
+        if !self.path_mode || ui.button("Clear path").clicked() {
+            self.path_start = None;
+            self.path_end = None;
+            clear_path_highlight();
+        }
+
+        if ui.button("Use Selected as start").clicked() {
+            if let Some(selected) = self.selected_node {
+                self.path_start = Some(selected);
+            }
+        }
+
+        if ui.button("Use Selected as end").clicked() {
+            if let Some(selected) = self.selected_node {
+                self.path_end = Some(selected);
+            }
+        }
+
+        if ui.button("Compute Path").clicked() {
+            use petgraph::algo::astar;
+            if let (Some(start_id), Some(end_id)) = (self.path_start, self.path_end) {
+                let graph = self.graph.graph.g();
+                let paths = astar(
+                    &graph,
+                    start_id,
+                    |idx| idx == end_id,
+                    |e| -> u32 { (&e.weight().payload().metric).into() },
+                    |_| 0,
+                );
+
+                let path_uuids = if let Some((_, path)) = paths {
+                    path.iter()
+                        .filter_map(|idx| self.graph.graph.node(*idx))
+                        .map(|n| n.payload().id)
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+
+                node_shape::set_path_highlight(path_uuids.into_iter());
+            }
+        }
+
+        let start_id_name = self
+            .path_start
+            .and_then(|idx| self.graph.graph.node(idx))
+            .map(|node| node.payload().id)
+            .map(|id| id.to_string())
+            .unwrap_or("None".to_string());
+
+        let end_id_name = self
+            .path_end
+            .and_then(|idx| self.graph.graph.node(idx))
+            .map(|node| node.payload().id)
+            .map(|id| id.to_string())
+            .unwrap_or("None".to_string());
+
+        ui.label(format!("Start: {}", start_id_name));
+        ui.label(format!("End: {}", end_id_name));
+    }
+
     fn reload_graph(&mut self) -> Result<(), FederationError> {
         let merged = self.store.build_merged_view_with(&self.merge_config)?;
 
         self.graph.reconcile(merged);
         Ok(())
+    }
+
+    fn render_edit_tools(&mut self, ui: &mut Ui) {
+        ui.label("Edit mode");
+        ui.horizontal(|ui| {
+            let mut t = self.edit_tool;
+            if ui
+                .selectable_label(matches!(t, EditTool::None), "None")
+                .clicked()
+            {
+                t = EditTool::None;
+            }
+            if ui
+                .selectable_label(matches!(t, EditTool::Snip), "Snip")
+                .clicked()
+            {
+                t = EditTool::Snip;
+            }
+            if ui
+                .selectable_label(matches!(t, EditTool::Draw), "Draw")
+                .clicked()
+            {
+                t = EditTool::Draw;
+            }
+            self.edit_tool = t;
+        });
+        ui.add_enabled_ui(self.graph.any_manual_changes(), |ui| {
+            if ui.button("Clear all manual changes").clicked() {
+                self.graph.clear_manual_changes();
+            }
+        });
+        ui.label("Hint: In Draw, click node A then node B to create an edge. Esc or click empty space cancels.");
+        if let Some((a, b, kind)) = self.selected_edge {
+            let is_manual = self.graph.is_manual_edge(a, b, kind);
+            ui.separator();
+            ui.label("Manual edge properties");
+            let mut metric_val: i32 = if let Some(metric) = self.previous_manual_metric {
+                metric as i32
+            } else {
+                1
+            };
+            if ui
+                .add_enabled(
+                    is_manual,
+                    egui::DragValue::new(&mut metric_val).range(1..=u32::MAX as i32),
+                )
+                .changed()
+            {
+                println!("Updating edge metric to {}", metric_val);
+                self.graph.update_manual_edge(a, b, kind, metric_val as u32);
+            }
+            if ui
+                .add_enabled(is_manual, Button::new("Delete manual edge"))
+                .clicked()
+            {
+                self.graph.remove_manual_edge(a, b, kind);
+                self.selected_edge = None;
+            }
+            self.previous_manual_metric = Some(metric_val as u32);
+        } else {
+            self.previous_manual_metric = None;
+        }
     }
 
     // update_data removed: label edits now apply directly via floating panel
@@ -427,6 +591,17 @@ impl App {
                     highlight_enabled
                 );
                 set_partition_highlight_enabled(highlight_enabled);
+            }
+            let mut edge_labels_enabled = edge_shape::edge_labels_enabled();
+            if ui
+                .checkbox(&mut edge_labels_enabled, "Edge metric labels")
+                .changed()
+            {
+                println!(
+                    "[app] Edge metric labels changed to: {}",
+                    edge_labels_enabled
+                );
+                edge_shape::set_edge_labels_enabled(edge_labels_enabled);
             }
 
             ui.separator();
@@ -681,7 +856,10 @@ impl App {
                     });
                 });
             });
-
+            ui.separator();
+            self.render_path_controls(ui);
+            ui.separator();
+            self.render_edit_tools(ui);
             ui.separator();
             if ui.button("Print graph data").clicked() {
                 println!("[app] Pressed print graph data button");
@@ -731,7 +909,7 @@ impl App {
                 Directed,
                 DefaultIx,
                 NetworkGraphNodeShape,
-                DefaultEdgeShape,
+                NetworkGraphEdgeShape,
                 LayoutState,
                 LayoutForceDirected<Layout>,
             >::new(&mut self.graph.graph)
@@ -743,11 +921,108 @@ impl App {
             .with_interactions(
                 &SettingsInteraction::default()
                     .with_node_selection_enabled(true)
-                    .with_edge_clicking_enabled(true),
+                    .with_edge_clicking_enabled(true)
+                    .with_edge_selection_enabled(true),
             );
+
+            edge_shape::clear_any_hit();
+            edge_shape::clear_edge_events();
 
             // Add widget and obtain response so we can overlay labels afterwards.
             let _response = ui.add(widget);
+
+            for ev in crate::gui::edge_shape::take_edge_events() {
+                if matches!(self.edit_tool, EditTool::Snip) {
+                    // Publish destruction animations for both directed edges
+                    edge_anim::publish_destroy(ev.src_uuid, ev.dst_uuid, ev.kind);
+                    edge_anim::publish_destroy(ev.dst_uuid, ev.src_uuid, ev.kind);
+                    // Defer actual removal until the fade-out completes
+                    self.pending_destroy
+                        .push((ev.src_uuid, ev.dst_uuid, ev.kind, ev.is_manual));
+                    ui.ctx().request_repaint();
+                } else {
+                    // Optional: set selected_edge to show properties panel
+                    self.selected_edge = Some((ev.src_uuid, ev.dst_uuid, ev.kind));
+                }
+            }
+
+            // Cleanup finished edge destroy animations and perform deferred removals
+            {
+                let fade_duration = std::time::Duration::from_millis(300);
+                edge_anim::cleanup_finished(fade_duration);
+                self.pending_destroy.retain(|(a, b, kind, is_manual)| {
+                    let anim_ab = edge_anim::get_anim(*a, *b, *kind);
+                    let anim_ba = edge_anim::get_anim(*b, *a, *kind);
+                    let still_animating = anim_ab.is_some() || anim_ba.is_some();
+                    if !still_animating {
+                        if *is_manual {
+                            self.graph.remove_manual_edge(*a, *b, *kind);
+                        } else {
+                            self.graph.supress_base_edge(*a, *b, *kind);
+                        }
+                        ui.ctx().request_repaint();
+                    }
+                    still_animating
+                });
+            }
+
+            if matches!(self.edit_tool, EditTool::Draw) {
+                // Cancel on escape or background click
+                let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+                if esc {
+                    self.draw_first = None;
+                } else {
+                    // If a click happened inside the graph and no node/edge was hit, cancel
+                    // You can use the GraphView response rect to check pointer pos; here we rely on any_hit()
+                    if !crate::gui::edge_shape::any_hit()
+                        && ctx.input(|i| i.pointer.primary_released())
+                    {
+                        self.draw_first = None;
+                    }
+                }
+
+                // Two-click node selection
+                if let Some(&idx) = self.graph.graph.selected_nodes().first() {
+                    match self.draw_first {
+                        None => {
+                            self.draw_first = Some(idx);
+                        }
+                        Some(a) if a != idx => {
+                            // Validate Router <-> Network for Membership
+                            let a_info = self.graph.graph.node(a).map(|n| n.payload().info.clone());
+                            let b_info =
+                                self.graph.graph.node(idx).map(|n| n.payload().info.clone());
+                            let valid_membership = match (a_info, b_info) {
+                                (
+                                    Some(crate::network::node::NodeInfo::Router(_)),
+                                    Some(crate::network::node::NodeInfo::Network(_)),
+                                )
+                                | (
+                                    Some(crate::network::node::NodeInfo::Network(_)),
+                                    Some(crate::network::node::NodeInfo::Router(_)),
+                                ) => true,
+                                _ => false,
+                            };
+                            if valid_membership {
+                                let a_uuid = self.graph.graph.node(a).unwrap().payload().id;
+                                let b_uuid = self.graph.graph.node(idx).unwrap().payload().id;
+                                // Default metric 1; later make this user-configurable at creation
+                                self.graph
+                                    .add_manual_edge(a_uuid, b_uuid, EdgeKind::Membership, 1);
+                                edge_anim::publish_create(a_uuid, b_uuid, EdgeKind::Membership);
+                                edge_anim::publish_create(b_uuid, a_uuid, EdgeKind::Membership);
+                            } else {
+                                // Optional: feedback
+                                eprintln!(
+                                    "Invalid edge: only Router <-> Network membership supported."
+                                );
+                            }
+                            self.draw_first = None;
+                        }
+                        _ => {}
+                    }
+                }
+            }
 
             // Take the collected overlay labels and paint them on top of the graph widget.
             let labels: Vec<LabelOverlay> = take_label_overlays();
