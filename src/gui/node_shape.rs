@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 
+use catppuccin_egui::Theme;
 use egui::{Color32, Pos2, Shape, Stroke, Vec2, epaint::CircleShape};
 use egui::{ColorImage, Context, TextureId, TextureOptions};
 use egui_graphs::{DisplayNode, DrawContext, NodeProps};
@@ -12,6 +13,7 @@ use uuid::Uuid;
 
 use egui::TextureHandle;
 
+use crate::gui::app;
 use crate::network::node::{Node, NodeInfo};
 use crate::network::router::RouterId;
 
@@ -107,6 +109,7 @@ pub struct NetworkGraphNodeShape {
     pub source_id: Option<RouterId>,
     pub node_uuid: uuid::Uuid, // stable id for animation
     pub node_router_id: Option<RouterId>,
+    pub theme: Theme,
     node_type: NodeType,
 }
 
@@ -183,6 +186,7 @@ impl From<NodeProps<Node>> for NetworkGraphNodeShape {
             node_uuid: payload.id,
             node_router_id: router_id,
             node_type: NodeType::from(&payload.info),
+            theme: app::get_theme(),
         }
     }
 }
@@ -222,12 +226,13 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
         // Smooth fade ring ONLY for origin
         let fade_highlighted = ctx.ctx.animate_bool(
             egui::Id::new(("partition_highlight", self.node_uuid)),
-            self.highlighted,
+            self.highlighted || self.hovered || self.selected,
         );
-        // Neutral stroke (no yellow ring here)
+        // Neutral stroke using theme (hovered fg for emphasis)
+        let hovered_fg = ctx.ctx.style().visuals.widgets.hovered.fg_stroke.color;
         let stroke = Stroke {
             width: 1.0 * fade_highlighted,
-            color: Color32::YELLOW.linear_multiply(fade_highlighted),
+            color: hovered_fg.linear_multiply(fade_highlighted),
         };
 
         // Draw node icon beneath highlight rings
@@ -257,7 +262,14 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
         );
         if fade_origin > 0.01 {
             let ring_radius = circle_radius * (1.25 + 0.10 * fade_origin);
-            let ring_color = Color32::YELLOW.linear_multiply(fade_origin);
+            // Use selection bg_fill for origin ring to align with theme
+            let ring_color = ctx
+                .ctx
+                .style()
+                .visuals
+                .selection
+                .bg_fill
+                .linear_multiply(fade_origin);
             let ring_stroke = Stroke {
                 width: 2.0 * fade_origin,
                 color: ring_color,
@@ -293,7 +305,8 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
 
         if fade_path > 0.01 {
             let ring_radius = circle_radius + (2.5 + 0.1 * fade_path);
-            let ring_color = Color32::PURPLE.linear_multiply(fade_path);
+            // Use hovered bg_fill for path accent
+            let ring_color = self.theme.mauve.linear_multiply(fade_path);
             let ring_stroke = Stroke {
                 width: 2.0 * fade_path,
                 color: ring_color,
@@ -320,6 +333,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
         self.label = state.label.to_string();
         self.color = state.color();
         self.source_id = state.payload.source_id.clone();
+        self.theme = app::get_theme();
 
         // If highlighting is enabled and this node is hovered, publish its partition (SourceId) for frame-wide highlight
         if partition_highlight_enabled() && self.hovered {
@@ -330,21 +344,23 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
 
 impl NetworkGraphNodeShape {
     fn is_interacted(&self) -> bool {
-        self.selected || self.dragged || self.hovered
+        self.selected
     }
 
     fn effective_color(&self, ctx: &DrawContext) -> Color32 {
-        if let Some(c) = self.color {
-            return c;
-        }
-
-        let style = if self.is_interacted() {
-            ctx.ctx.style().visuals.widgets.active
-        } else {
-            ctx.ctx.style().visuals.widgets.inactive
+        let mut base = match self.node_type {
+            NodeType::Router => self.theme.blue,
+            NodeType::Network => self.theme.green,
         };
 
-        let mut base = style.fg_stroke.color;
+        if self.hovered || self.selected {
+            base = Color32::from_rgb(
+                base.r().saturating_add(40).min(255),
+                base.g().saturating_add(100).min(255),
+                base.b().saturating_sub(40).max(0),
+            );
+        }
+
         if self.highlighted {
             // Warm tint to indicate same-area highlight
             base = Color32::from_rgb(

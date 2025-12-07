@@ -8,11 +8,11 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    gui::{edge_shape::NetworkGraphEdgeShape, node_shape::NetworkGraphNodeShape},
+    gui::{app, edge_shape::NetworkGraphEdgeShape, node_shape::NetworkGraphNodeShape},
     network::{
         edge::{Edge, EdgeKind, EdgeMetric, ManualEdgeSpec, UndirectedEdgeKey},
-        node::{Node, NodeInfo, OspfPayload, ProtocolData},
-        router::RouterId,
+        node::{IsIsData, Node, NodeInfo, OspfData, OspfPayload, ProtocolData},
+        router::{Router, RouterId},
         // removed unused RouterId import
     },
     parsers::isis_parser::core_lsp::Tlv,
@@ -200,21 +200,10 @@ impl NetworkGraph {
                     NodeInfo::Router(_) => "Router".to_string(),
                 }
             };
+            let theme = app::get_theme();
 
-            // Set color based on node type
-            let router_color = Color32::BLUE;
-            let network_color = Color32::GREEN;
-            let inter_area_color = Color32::LIGHT_GREEN;
-            let node_color = if payload.is_inter_area() {
-                inter_area_color
-            } else {
-                match &payload.info {
-                    NodeInfo::Network(_) => network_color,
-                    NodeInfo::Router(_) => router_color,
-                }
-            };
+            // Set label; color will be derived by NetworkGraphNodeShape via theme visuals
             node.set_label(label);
-            node.set_color(node_color);
         }
 
         Self {
@@ -284,7 +273,6 @@ impl NetworkGraph {
                         }
                     };
                     node.set_label(label);
-                    node.set_color(node_color);
                     node.set_location(pos);
                 }
             } else {
@@ -296,7 +284,7 @@ impl NetworkGraph {
                 let pos = Pos2::new(rng.random_range(0.0..40.0), rng.random_range(0.0..40.0));
                 if let Some(n) = self.graph.node_mut(idx) {
                     n.set_location(pos);
-
+                    
                     let payload = n.payload();
 
                     let router_color = Color32::BLUE;
@@ -318,7 +306,6 @@ impl NetworkGraph {
                             NodeInfo::Router(_) => "Router".to_string(),
                         });
                     n.set_label(label);
-                    n.set_color(node_color);
                 }
 
                 self.node_id_to_index_map.insert(*id, idx);
@@ -457,98 +444,10 @@ impl NetworkGraph {
         for (src_idx, src_uuid, dst_uuid, kind) in specs {
             let metric = match kind {
                 // Membership edges don't carry a metric
-                EdgeKind::Membership => {
-                    // Attach IS-IS metrics to membership (Router -> Network) edges using Extended IP Reachability TLVs (#135)
-                    if let Some(src_node) = self.graph.node(src_idx).map(|n| n.payload()) {
-                        if let NodeInfo::Router(router) = &src_node.info {
-                            if let Some(ProtocolData::IsIs(isis)) = &router.protocol_data {
-                                if let Some(&dst_idx) = self.node_id_to_index_map.get(&dst_uuid) {
-                                    if let Some(dst_node) =
-                                        self.graph.node(dst_idx).map(|n| n.payload())
-                                    {
-                                        if let NodeInfo::Network(network) = &dst_node.info {
-                                            // Find a matching prefix in Extended IP Reachability TLVs
-                                            if let Some(Tlv::ExtendedIpReachability(ext_ip)) =
-                                                isis.tlvs.iter().find(|t| {
-                                                    matches!(t, Tlv::ExtendedIpReachability(_))
-                                                })
-                                            {
-                                                if let Some(nbr) =
-                                                    ext_ip.neighbors.iter().find(|n| {
-                                                        n.prefix == network.ip_address && n.up_down
-                                                    })
-                                                {
-                                                    EdgeMetric::IsIs(nbr.metric)
-                                                } else {
-                                                    EdgeMetric::None
-                                                }
-                                            } else {
-                                                EdgeMetric::None
-                                            }
-                                        } else {
-                                            EdgeMetric::None
-                                        }
-                                    } else {
-                                        EdgeMetric::None
-                                    }
-                                } else {
-                                    EdgeMetric::None
-                                }
-                            } else {
-                                EdgeMetric::None
-                            }
-                        } else {
-                            EdgeMetric::None
-                        }
-                    } else {
-                        EdgeMetric::None
-                    }
-                }
+                EdgeKind::Membership => self.membership_metric(src_idx, src_uuid, dst_uuid),
                 // For OSPF logical reachability (ABR -> Network), use the Summary metric
                 EdgeKind::LogicalReachability => {
-                    if let Some(src_node) = self.graph.node(src_idx).map(|n| n.payload()) {
-                        if let NodeInfo::Router(router) = &src_node.info {
-                            if let Some(&dst_idx) = self.node_id_to_index_map.get(&dst_uuid) {
-                                if let Some(dst_node) =
-                                    self.graph.node(dst_idx).map(|n| n.payload())
-                                {
-                                    if let NodeInfo::Network(network) = &dst_node.info {
-                                        if let Some(ProtocolData::Ospf(ospf_net)) =
-                                            &network.protocol_data
-                                        {
-                                            if let OspfPayload::Network(net_payload) =
-                                                &ospf_net.payload
-                                            {
-                                                if let Some(s) = net_payload
-                                                    .summaries
-                                                    .iter()
-                                                    .find(|s| s.origin_abr == router.id)
-                                                {
-                                                    EdgeMetric::Ospf(s.metric)
-                                                } else {
-                                                    EdgeMetric::None
-                                                }
-                                            } else {
-                                                EdgeMetric::None
-                                            }
-                                        } else {
-                                            EdgeMetric::None
-                                        }
-                                    } else {
-                                        EdgeMetric::None
-                                    }
-                                } else {
-                                    EdgeMetric::None
-                                }
-                            } else {
-                                EdgeMetric::None
-                            }
-                        } else {
-                            EdgeMetric::None
-                        }
-                    } else {
-                        EdgeMetric::None
-                    }
+                    self.logical_reachability_metric(src_idx, src_uuid, dst_uuid)
                 }
                 // Default: no metric
                 _ => EdgeMetric::None,
@@ -574,6 +473,132 @@ impl NetworkGraph {
             }
         }
         eprintln!("{log_tag} materialized {added} edges");
+    }
+
+    fn membership_metric(&self, src_idx: NodeIndex, src_uuid: Uuid, dst_uuid: Uuid) -> EdgeMetric {
+        let src_node = match self.graph.node(src_idx) {
+            Some(n) => n.payload(),
+            None => return EdgeMetric::None,
+        };
+
+        let router = match &src_node.info {
+            NodeInfo::Router(r) => r,
+            _ => return EdgeMetric::None,
+        };
+
+        match &router.protocol_data {
+            Some(ProtocolData::IsIs(isis_data)) => self.isis_membership_metric(dst_uuid, isis_data),
+            _ => EdgeMetric::None,
+        }
+    }
+
+    fn isis_membership_metric(&self, dst_uuid: Uuid, isis_data: &IsIsData) -> EdgeMetric {
+        let dst_idx = match self.node_id_to_index_map.get(&dst_uuid) {
+            Some(i) => i,
+            None => return EdgeMetric::None,
+        };
+
+        let dst_node = match self.graph.node(*dst_idx) {
+            Some(n) => n.payload(),
+            None => return EdgeMetric::None,
+        };
+
+        let network = match &dst_node.info {
+            NodeInfo::Network(n) => n,
+            _ => return EdgeMetric::None,
+        };
+
+        let ext_ip_reach = match isis_data.tlvs.iter().find_map(|t| {
+            if let Tlv::ExtendedIpReachability(e) = t {
+                Some(e)
+            } else {
+                None
+            }
+        }) {
+            Some(e) => e,
+            None => return EdgeMetric::None,
+        };
+
+        match ext_ip_reach
+            .neighbors
+            .iter()
+            .find(|n| n.prefix == network.ip_address)
+        {
+            Some(nbr) => EdgeMetric::IsIs(nbr.metric),
+            None => EdgeMetric::None,
+        }
+    }
+
+    fn logical_reachability_metric(
+        &self,
+        src_idx: NodeIndex,
+        src_uuid: Uuid,
+        dst_uuid: Uuid,
+    ) -> EdgeMetric {
+        let src_node = match self.graph.node(src_idx) {
+            Some(n) => n.payload(),
+            None => return EdgeMetric::None,
+        };
+
+        let router = match &src_node.info {
+            NodeInfo::Router(r) => r,
+            _ => return EdgeMetric::None,
+        };
+
+        match &router.protocol_data {
+            Some(ProtocolData::Ospf(d)) => {
+                self.ospf_logical_reachability_metric(src_idx, src_uuid, dst_uuid, d, router)
+            }
+            _ => EdgeMetric::None,
+        }
+    }
+
+    fn ospf_logical_reachability_metric(
+        &self,
+        src_idx: NodeIndex,
+        src_uuid: Uuid,
+        dst_uuid: Uuid,
+        ospf_data: &OspfData,
+        src_router: &Router,
+    ) -> EdgeMetric {
+        let dst_idx = match self.node_id_to_index_map.get(&src_uuid) {
+            Some(idx) => idx,
+            None => return EdgeMetric::None,
+        };
+
+        let dst_node = match self.graph.node(*dst_idx) {
+            Some(n) => n.payload(),
+            None => return EdgeMetric::None,
+        };
+
+        let dst_net = match &dst_node.info {
+            NodeInfo::Network(n) => n,
+            _ => return EdgeMetric::None,
+        };
+
+        let dst_ospf_data = match &dst_net.protocol_data {
+            Some(ProtocolData::Ospf(d)) => d,
+            _ => return EdgeMetric::None,
+        };
+
+        match &dst_ospf_data.payload {
+            // Concrete network node with summaries attached
+            OspfPayload::Network(net_payload) => {
+                if let Some(s) = net_payload
+                    .summaries
+                    .iter()
+                    .find(|s| s.origin_abr == src_router.id)
+                {
+                    EdgeMetric::Ospf(s.metric)
+                } else {
+                    EdgeMetric::None
+                }
+            }
+            // Node itself represents a summarized prefix
+            OspfPayload::SummaryNetwork(summary) => EdgeMetric::Ospf(summary.metric),
+            // Other payload types don’t carry ABR->Network summary metrics
+            _ => EdgeMetric::None,
+        }
     }
 
     pub fn add_manual_edge(&mut self, a: Uuid, b: Uuid, kind: EdgeKind, metric: u32) {

@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -12,12 +13,9 @@ use crate::network::edge::EdgeKind;
 use crate::network::node::NodeInfo;
 
 use crate::parsers::isis_parser::topology::IsIsTopology;
-use crate::topology::ospf_protocol::OspfFederator;
 use crate::topology::protocol::FederationError;
 use crate::topology::source::SnapshotSource;
-use crate::topology::store::{
-    AvailableFederators, MergeConfig, SourceId, SourceState, TopologyStore,
-};
+use crate::topology::store::{MergeConfig, SourceId, SourceState, TopologyStore};
 use crate::{
     gui::node_shape::{
         LabelOverlay, NetworkGraphNodeShape, clear_area_highlight, clear_label_overlays,
@@ -26,21 +24,27 @@ use crate::{
     network::{network_graph::NetworkGraph, node::Node},
     topology::OspfSnmpTopology,
 };
+use catppuccin_egui::Theme;
 use eframe::egui;
 use egui::{
-    Button, CentralPanel, Checkbox, CollapsingHeader, ComboBox, Context, Id, Separator, SidePanel,
-    Ui,
+    Button, CentralPanel, Checkbox, CollapsingHeader, Context, Id, Separator, SidePanel, Ui,
 };
 use egui_extras::{Column, TableBuilder};
 use egui_graphs::{
-    DefaultEdgeShape, FruchtermanReingoldWithCenterGravity,
-    FruchtermanReingoldWithCenterGravityState, LayoutForceDirected, SettingsInteraction,
-    SettingsNavigation, SettingsStyle,
+    FruchtermanReingoldWithCenterGravity, FruchtermanReingoldWithCenterGravityState,
+    LayoutForceDirected, SettingsInteraction, SettingsNavigation,
 };
-use petgraph::algo::bidirectional_dijkstra;
 use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex};
 use tokio::runtime::Runtime;
 use uuid::Uuid;
+
+thread_local! {
+    static THEME: RefCell<Theme> = RefCell::new(catppuccin_egui::MACCHIATO);
+}
+
+pub fn get_theme() -> Theme {
+    THEME.with(|theme| theme.borrow().clone())
+}
 
 pub fn main(rt: Arc<Runtime>) {
     let native_options = eframe::NativeOptions::default();
@@ -108,6 +112,7 @@ struct App {
     #[allow(unused)]
     runtime: Arc<Runtime>,
     layout_state: LayoutState,
+    theme: Theme,
 
     pending_destroy: Vec<(Uuid, Uuid, EdgeKind, bool)>,
 
@@ -181,6 +186,7 @@ impl App {
             layout_state,
             selected_edge: None,
             pending_destroy: Vec::new(),
+            theme: THEME.with(|theme| theme.borrow().clone()),
 
             path_mode: false,
             path_start: None,
@@ -464,6 +470,7 @@ impl App {
     // update_data removed: label edits now apply directly via floating panel
 
     fn render(&mut self, ctx: &Context) {
+        catppuccin_egui::set_theme(ctx, self.theme);
         // Debug: print pending/connect slot state at start of render
         {
             // Snapshot the mutex states briefly for logging (non-blocking relative to UI)
@@ -822,11 +829,49 @@ impl App {
                     }
                 });
 
-            ui.add(Separator::default());
+            ui.separator();
 
             self.render_sources_section(ui);
 
-            ui.add(Separator::default());
+            ui.separator();
+
+            // Theme selector
+            {
+                let theme_before = self.theme;
+                egui::ComboBox::from_label("Select theme")
+                    .selected_text(format!("{}", match self.theme {
+                        catppuccin_egui::LATTE => "Latte",
+                        catppuccin_egui::FRAPPE => "Frappe",
+                        catppuccin_egui::MACCHIATO => "Macchiato",
+                        catppuccin_egui::MOCHA => "Mocha",
+                        _ => "Unknown"
+                    }))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.theme, 
+                            catppuccin_egui::LATTE, 
+                            "Latte");
+                        ui.selectable_value(
+                            &mut self.theme, 
+                            catppuccin_egui::FRAPPE, 
+                            "Frappe");
+                        ui.selectable_value(
+                            &mut self.theme,
+                            catppuccin_egui::MACCHIATO,
+                            "Macchiato",
+                        );
+                        ui.selectable_value(
+                            &mut self.theme, 
+                            catppuccin_egui::MOCHA, 
+                            "Mocha");
+                    });
+                if theme_before != self.theme {
+                    THEME.with(|theme| theme.replace(self.theme));
+                    catppuccin_egui::set_theme(ctx, self.theme);
+                }
+            }
+
+            ui.separator();
 
             // Forces section
             CollapsingHeader::new("Forces").default_open(true).show(ui, |ui| {

@@ -5,6 +5,7 @@ use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps};
 use petgraph::{EdgeType, stable_graph::IndexType};
 use uuid::Uuid;
 
+use crate::gui::app;
 use crate::gui::node_shape::NetworkGraphNodeShape;
 use crate::network::edge::{Edge as NetEdge, EdgeKind, EdgeMetric};
 
@@ -65,7 +66,7 @@ pub struct NetworkGraphEdgeShape {
     src_uuid: Option<uuid::Uuid>,
     dst_uuid: Option<uuid::Uuid>,
     kind: Option<crate::network::edge::EdgeKind>,
-    metric: EdgeMetric
+    metric: EdgeMetric,
 }
 
 impl Default for NetworkGraphEdgeShape {
@@ -75,7 +76,7 @@ impl Default for NetworkGraphEdgeShape {
             src_uuid: None,
             dst_uuid: None,
             kind: None,
-            metric: EdgeMetric::None
+            metric: EdgeMetric::None,
         }
     }
 }
@@ -88,7 +89,7 @@ impl From<EdgeProps<NetEdge>> for NetworkGraphEdgeShape {
             src_uuid: Some(props.payload.source_id),
             dst_uuid: Some(props.payload.destination_id),
             kind: Some(props.payload.kind),
-            metric: props.payload.metric
+            metric: props.payload.metric,
         }
     }
 }
@@ -139,27 +140,29 @@ impl<Ty: EdgeType, Ix: IndexType>
                 // 300ms fade, using your ease_in_out_cubic
                 let duration = std::time::Duration::from_millis(300);
                 let p = anim.eased_progress(duration, ease_in_out_cubic);
-
+                let theme = app::get_theme();
                 match anim.phase {
                     crate::gui::edge_anim::EdgeAnimPhase::Creating => {
                         alpha_factor = p;
                         width_scale = 0.5 + 0.5 * p;
-                        // Optional: slight greenish tint on create
+                        // Blend toward hovered bg_fill for a theme-aware “appearing” accent
+                        let accent = theme.teal;
                         base = egui::Color32::from_rgb(
-                            (base.r() as f32 * 0.7 + 40.0) as u8,
-                            (base.g() as f32 * 0.7 + 150.0) as u8,
-                            base.b(),
+                            ((base.r() as u16 * 2 + accent.r() as u16) / 3) as u8,
+                            ((base.g() as u16 * 2 + accent.g() as u16) / 3) as u8,
+                            ((base.b() as u16 * 2 + accent.b() as u16) / 3) as u8,
                         );
                     }
                     crate::gui::edge_anim::EdgeAnimPhase::Destroying => {
                         let inv = 1.0 - p;
                         alpha_factor = inv;
                         width_scale = 0.5 + 0.5 * inv;
-                        // Optional: slight reddish tint on destroy
+                        // Blend toward inactive bg_fill for a theme-aware “fading” accent
+                        let accent = theme.red;
                         base = egui::Color32::from_rgb(
-                            (base.r() as f32 * 0.7 + 180.0) as u8,
-                            (base.g() as f32 * 0.7 + 40.0) as u8,
-                            base.b(),
+                            ((base.r() as u16 * 2 + accent.r() as u16) / 3) as u8,
+                            ((base.g() as u16 * 2 + accent.g() as u16) / 3) as u8,
+                            ((base.b() as u16 * 2 + accent.b() as u16) / 3) as u8,
                         );
                     }
                 }
@@ -177,7 +180,7 @@ impl<Ty: EdgeType, Ix: IndexType>
             color,
         };
         let mut shapes = vec![Shape::line_segment([a_screen, b_screen], stroke)];
-        
+
         // Optional metric label:
         if edge_labels_enabled() {
             println!("Metric label enabled");
@@ -190,7 +193,11 @@ impl<Ty: EdgeType, Ix: IndexType>
             let dir = b_screen - a_screen;
             let n = egui::vec2(-dir.y, dir.x); // perpendicular
             let nlen = n.length();
-            let offset = if nlen > 0.0 { n * (8.0 / nlen) } else { egui::vec2(0.0, 0.0) };
+            let offset = if nlen > 0.0 {
+                n * (8.0 / nlen)
+            } else {
+                egui::vec2(0.0, 0.0)
+            };
             let label_pos = mid + offset;
 
             // Fetch a human-readable metric string from the edge payload:
@@ -201,11 +208,17 @@ impl<Ty: EdgeType, Ix: IndexType>
                 EdgeMetric::Manual(m) => Some(format!("Manual: {}", m)),
                 _ => None,
             };
-            
+
             if let Some(metric_text) = metric_text {
                 println!("[edge_shape] Metric text: {}", metric_text);
                 // Use egui font system to layout the text:
-                let text_color = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 230);
+                let base_text = ctx.ctx.style().visuals.widgets.inactive.fg_stroke.color;
+                let text_color = Color32::from_rgba_unmultiplied(
+                    base_text.r(),
+                    base_text.g(),
+                    base_text.b(),
+                    230,
+                );
                 ctx.ctx.fonts_mut(|fonts| {
                     let galley = fonts.layout_no_wrap(
                         metric_text,
