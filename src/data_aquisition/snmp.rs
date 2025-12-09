@@ -4,13 +4,33 @@ use crate::data_aquisition::core::LinkStateValue;
 
 use super::core::RawRouterData;
 
-use snmp2::{AsyncSession, MessageType, Oid, Version, v3::Security};
-use thiserror::Error;
+use snmp2::{AsyncSession, Oid, Version, v3::Security};
 use std::{
-    collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc,
-    time::Duration,
+    collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr, sync::Arc, time::Duration,
 };
+use thiserror::Error;
 use tokio::sync::Mutex;
+
+#[derive(Debug, Clone)]
+pub enum MessageType {
+    GetRequest,
+    GetNextRequest,
+    GetBulkRequest,
+    SetRequest,
+    WalkRequest,
+}
+
+impl Display for MessageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MessageType::GetRequest => write!(f, "GetRequest"),
+            MessageType::GetNextRequest => write!(f, "GetNextRequest"),
+            MessageType::GetBulkRequest => write!(f, "GetBulkRequest"),
+            MessageType::SetRequest => write!(f, "SetRequest"),
+            MessageType::WalkRequest => write!(f, "WalkRequest"),
+        }
+    }
+}
 
 /// SNMP client for retrieving data from a network device.
 pub struct SnmpClient {
@@ -113,6 +133,11 @@ impl<'a> QueryBuilder<'a> {
         self
     }
 
+    pub fn walk(mut self) -> Self {
+        self.operation = Some(MessageType::WalkRequest);
+        self
+    }
+
     pub fn get_bulk(mut self, non_repeaters: u32, max_repetitions: u32) -> Self {
         self.operation = Some(MessageType::GetBulkRequest);
         self.non_repeaters = Some(non_repeaters);
@@ -154,49 +179,122 @@ impl<'a> QueryBuilder<'a> {
 
         let mut session = session_arc.lock().await;
 
-        let response = match operation {
+        let raw_router_data: Vec<RawRouterData> = match operation {
             MessageType::GetRequest => {
                 if self.oids.len() != 1 {
-                    return Err(SnmpClientError::MultipleOidsOnGet);
+                    return Err(SnmpClientError::MultipleOidsOnSingleOperation(
+                        MessageType::GetRequest,
+                    ));
                 }
                 // Clone the oid to avoid borrowing
                 let oid = self.oids[0].clone();
-                Ok(session
+                let response = session
                     .get(&oid)
                     .await
-                    .map_err(SnmpClientError::Snmp2Error)?)
+                    .map_err(SnmpClientError::Snmp2Error)?;
+                response
+                    .varbinds
+                    .into_iter()
+                    .map(|(oid, value)| RawRouterData::Snmp {
+                        oid: oid.to_owned(),
+                        value: LinkStateValue::from(&value),
+                    })
+                    .collect()
             }
             MessageType::GetNextRequest => {
                 if self.oids.len() != 1 {
-                    return Err(SnmpClientError::MultipleOidsOnGet);
+                    return Err(SnmpClientError::MultipleOidsOnSingleOperation(
+                        MessageType::GetNextRequest,
+                    ));
                 }
                 let oid = self.oids[0].clone();
-                Ok(session
+                let response = session
                     .getnext(&oid)
                     .await
-                    .map_err(SnmpClientError::Snmp2Error)?)
+                    .map_err(SnmpClientError::Snmp2Error)?;
+                response
+                    .varbinds
+                    .into_iter()
+                    .map(|(oid, value)| RawRouterData::Snmp {
+                        oid: oid.to_owned(),
+                        value: LinkStateValue::from(&value),
+                    })
+                    .collect()
             }
             MessageType::GetBulkRequest => {
                 // Clone all oids to avoid lifetime issues
                 let oids: Vec<Oid<'a>> = self.oids.iter().cloned().collect();
                 let oid_refs: Vec<&Oid> = oids.iter().collect();
 
-                Ok(session
+                let response = session
                     .getbulk(&oid_refs, non_repeaters, max_repetitions)
                     .await
-                    .map_err(SnmpClientError::Snmp2Error)?)
+                    .map_err(SnmpClientError::Snmp2Error)?;
+                response
+                    .varbinds
+                    .into_iter()
+                    .map(|(oid, value)| RawRouterData::Snmp {
+                        oid: oid.to_owned(),
+                        value: LinkStateValue::from(&value),
+                    })
+                    .collect()
             }
-            _ => Err(SnmpClientError::UnsupportedSnmpOperation),
-        }?;
+            MessageType::WalkRequest => {
+                // SNMP Walk over a subtree: require exactly one starting OID
+                if self.oids.len() != 1 {
+                    return Err(SnmpClientError::MultipleOidsOnSingleOperation(
+                        MessageType::WalkRequest,
+                    ));
+                }
+                let start_oid = self.oids[0].clone();
 
-        let raw_router_data: Vec<RawRouterData> = response
-            .varbinds
-            .into_iter()
-            .map(|(oid, value)| RawRouterData::Snmp {
-                oid: oid.to_owned(),
-                value: LinkStateValue::from(&value),
-            })
-            .collect();
+                // We'll iteratively call getnext until the returned OID no longer starts with the start_oid prefix
+                let mut results: Vec<RawRouterData> = Vec::new();
+                let mut current_oid = start_oid.clone();
+
+                loop {
+                    let resp = session
+                        .getnext(&current_oid)
+                        .await
+                        .map_err(SnmpClientError::Snmp2Error)?;
+
+                    // Collect all varbinds in this response
+                    let mut collected_any = false;
+                    let mut last_oid_in_resp: Option<Oid> = None;
+                    for (oid, value) in resp.varbinds {
+                        collected_any = true;
+                        // Stop if we've left the subtree
+                        if !oid.starts_with(&start_oid) {
+                            last_oid_in_resp = Some(oid.to_owned());
+                            break;
+                        }
+                        results.push(RawRouterData::Snmp {
+                            oid: oid.to_owned(),
+                            value: LinkStateValue::from(&value),
+                        });
+                        last_oid_in_resp = Some(oid.to_owned());
+                    }
+
+                    // If response had no varbinds, we're done
+                    if !collected_any {
+                        break;
+                    }
+
+                    // If the last OID in this response left the subtree, stop
+                    if let Some(last_oid) = &last_oid_in_resp {
+                        if !last_oid.starts_with(&start_oid) {
+                            break;
+                        }
+                        current_oid = last_oid.clone();
+                    } else {
+                        break;
+                    }
+                }
+
+                results
+            }
+            _ => return Err(SnmpClientError::UnsupportedSnmpOperation),
+        };
 
         Ok(raw_router_data)
     }
@@ -216,8 +314,8 @@ pub enum SnmpClientError {
     NoSession,
     #[error("Invalid query")]
     InvalidQuery,
-    #[error("Multiple OIDs provided for single GET/GETNEXT")]
-    MultipleOidsOnGet,
+    #[error("Multiple OIDs provided for operation {0}")]
+    MultipleOidsOnSingleOperation(MessageType),
     #[error("Unsupported SNMP operation")]
     UnsupportedSnmpOperation,
     #[error("Invalid data for expected SNMP response")]
