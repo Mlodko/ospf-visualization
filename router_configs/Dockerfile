@@ -2,7 +2,7 @@ FROM debian:bookworm
 
 # Install dependencies
 RUN apt-get update && \
-    apt-get install -y gnupg2 snmpd curl lsb-release
+    apt-get install -y gnupg2 snmpd curl lsb-release inetutils-ping inetutils-traceroute iptables
 
 # Add FRRouting repository
 RUN curl -s https://deb.frrouting.org/frr/keys.asc | apt-key add - && \

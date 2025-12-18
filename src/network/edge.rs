@@ -7,7 +7,7 @@ pub struct Edge {
     pub destination_id: Uuid,
     pub metric: EdgeMetric,
     pub kind: EdgeKind,
-    pub protocol_tag: Option<String>
+    pub protocol_tag: Option<String>,
 }
 
 #[derive(Debug, Clone)]

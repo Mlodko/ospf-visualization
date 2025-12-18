@@ -6,14 +6,14 @@ use crate::{
         node::{
             Network as NetStruct, Node, NodeInfo, OspfPayload, PerAreaRouterFacet, ProtocolData,
         },
-        router::RouterId,
+        router::{InterfaceStats, RouterId},
     },
     parsers::ospf_parser::{
         lsa::{LsaError, OspfLsdbEntry},
         source::{OspfDataSource, OspfRawRow},
     },
     topology::protocol::{
-        FederationError, ProtocolFederator, ProtocolParseError, ProtocolTopologyError,
+        AcquisitionError, FederationError, ProtocolFederator, ProtocolParseError, ProtocolTopologyError
     },
 };
 use async_trait::async_trait;
@@ -335,6 +335,17 @@ impl super::protocol::AcquisitionSource<OspfProtocol> for OspfSnmpAcquisition {
         &mut self,
     ) -> Result<crate::topology::store::SourceId, super::protocol::AcquisitionError> {
         self.inner.fetch_source_id().await.map_err(|e| match e {
+            crate::parsers::ospf_parser::source::OspfSourceError::Acquisition(s) => {
+                super::protocol::AcquisitionError::Transport(s)
+            }
+            crate::parsers::ospf_parser::source::OspfSourceError::Invalid(s) => {
+                super::protocol::AcquisitionError::Invalid(s)
+            }
+        })
+    }
+    
+    async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, AcquisitionError> {
+        self.inner.fetch_stats().await.map_err(|e| match e {
             crate::parsers::ospf_parser::source::OspfSourceError::Acquisition(s) => {
                 super::protocol::AcquisitionError::Transport(s)
             }

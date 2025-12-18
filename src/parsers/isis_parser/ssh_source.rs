@@ -1,17 +1,15 @@
 use async_trait::async_trait;
 
 use crate::{
-    data_aquisition::ssh::SshClient,
-    parsers::isis_parser::{
+    data_aquisition::ssh::SshClient, network::router::InterfaceStats, parsers::isis_parser::{
         core_lsp::NetAddress, frr_json_lsp::JsonLspdb, hostname::HostnameMap,
         protocol::JsonIsisProtocol,
-    },
-    topology::{
+    }, topology::{
         protocol::{AcquisitionError, AcquisitionSource},
         store::SourceId,
-    },
+    }
 };
-use std::env;
+use std::{collections::HashMap, env, net::IpAddr};
 
 pub struct IsisSshSource {
     client: SshClient,
@@ -153,6 +151,143 @@ impl IsisSshSource {
 
         Ok(SourceId::IsIs(source_id.clone()))
     }
+    
+    async fn fetch_if_id_to_stats(&self) -> Result<HashMap<u64, Stats>, AcquisitionError> {
+        let cmd_output = self.client
+            .execute_command("ip -j -s link show").await
+            .map_err(|err| AcquisitionError::Transport(err.to_string()))?;
+        println!("Stats cmd output: {}", cmd_output);
+        let json: serde_json::Value = serde_json::from_str(&cmd_output)
+            .map_err(|err| AcquisitionError::Invalid(err.to_string()))?;
+        
+        if let serde_json::Value::Array(interfaces) = json {
+            let mut if_id_to_stats = HashMap::new();
+            
+            for interface in interfaces {
+                if let serde_json::Value::Object(if_obj) = interface {
+                    let id: u64 = if let Some(id) = if_obj.get("ifindex") {
+                        id.as_u64().ok_or(AcquisitionError::Invalid("Invalid ifindex".to_string()))?
+                    } else {
+                        return Err(AcquisitionError::Invalid("Missing ifindex".to_string()));
+                    };
+                    
+                    let stats = if let Some(serde_json::Value::Object(stats_map)) = if_obj.get("stats64") {
+                        let mut stats = Stats {
+                            rx_packets: 0,
+                            tx_packets: 0,
+                            rx_bytes: 0,
+                            tx_bytes: 0,
+                        };
+                        
+                        if let Some(serde_json::Value::Object(rx)) = stats_map.get("rx") {
+                            let bytes = rx.get("bytes").and_then(|v| v.as_u64());
+                            stats.rx_bytes = bytes.unwrap_or(0);
+                            
+                            let packets = rx.get("packets").and_then(|v| v.as_u64());
+                            stats.rx_packets = packets.unwrap_or(0);
+                        }
+                        
+                        if let Some(serde_json::Value::Object(tx)) = stats_map.get("tx") {
+                            let bytes = tx.get("bytes").and_then(|v| v.as_u64());
+                            stats.tx_bytes = bytes.unwrap_or(0);
+                            
+                            let packets = tx.get("packets").and_then(|v| v.as_u64());
+                            stats.tx_packets = packets.unwrap_or(0);
+                        }
+                        
+                        stats
+                    } else {
+                        return Err(AcquisitionError::Invalid("Missing stats64".to_string()));
+                    };
+                    
+                    if_id_to_stats.insert(id, stats);
+                }
+            }
+            return Ok(if_id_to_stats);
+        } else {
+            Err(AcquisitionError::Invalid("Missing stats64".to_string()))
+        }
+    }
+    
+    async fn fetch_if_id_to_ip(&self) -> Result<HashMap<u64, IpAddr>, AcquisitionError> {
+        use serde_json::Value;
+        let cmd_output = self.client
+            .execute_command("vtysh -c 'show int json'")
+            .await
+            .map_err(|e| AcquisitionError::Invalid(format!("Failed to execute command: {}", e)))?;
+        
+        println!("IP command output: {}", cmd_output);
+        
+        let json: Value = serde_json::from_str(&cmd_output)
+            .map_err(|e| AcquisitionError::Invalid(format!("Failed to parse JSON: {}", e)))?;
+        
+        if let Value::Object(interfaces) = json {
+            let mut if_id_to_ip_map = HashMap::new();
+            
+            for if_obj in interfaces.values() {
+                if let Value::Object(if_details) = if_obj {
+                    let id = if_details.get("index").and_then(|v| v.as_u64());
+                    dbg!(&id);
+                    let mut ip = if let Some(Value::Array(ips)) = if_details.get("ipAddresses") {
+                        let primary_ip_objs: Vec<_> = ips.iter().filter_map(|ip| {
+                            if let Value::Object(ip_obj) = ip {
+                                if let Some(Value::Bool(secondary)) = ip_obj.get("secondary") {
+                                    if !secondary {
+                                        Some(ip_obj)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }).collect();
+                        
+                        if let Some(primary_ip_obj) = primary_ip_objs.first() {
+                            if let Some(Value::String(ip)) = primary_ip_obj.get("address") {
+                                dbg!(ip);
+                                let ip = ip.split('/').next().unwrap().to_string();
+                                Some(ip.parse::<IpAddr>().map_err(|_| AcquisitionError::Invalid(format!("Invalid IP address: {}", ip)))?)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                        
+                    } else {
+                        None
+                    };
+                    
+                    if let Some(Value::String(if_type)) = if_details.get("type") {
+                        if if_type == "Loopback" {
+                            ip = Some("127.0.0.1".parse::<IpAddr>().unwrap())
+                        }
+                    }
+                    
+                    if let (Some(id), Some(ip)) = (id, ip) {
+                        if_id_to_ip_map.insert(id, ip);
+                    } else {
+                        return Err(AcquisitionError::Invalid("Invalid JSON format".to_string()))
+                    }
+                }
+            }
+            
+            Ok(if_id_to_ip_map)
+        } else {
+            Err(AcquisitionError::Invalid("Invalid JSON format".to_string()))
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Stats {
+    rx_packets: u64,
+    tx_packets: u64,
+    rx_bytes: u64,
+    tx_bytes: u64,
 }
 
 #[async_trait]
@@ -169,6 +304,28 @@ impl AcquisitionSource<JsonIsisProtocol> for IsisSshSource {
         // We have an inherent async method `fetch_source_id(&self)` above; call it with an explicit receiver.
         println!("[IsisSshSource] trait fetch_source_id: delegating to inherent method");
         IsisSshSource::fetch_source_id(&*self).await
+    }
+    
+    async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, AcquisitionError> {
+        let if_id_to_stats = self.fetch_if_id_to_stats().await?;
+        dbg!(&if_id_to_stats);
+        let if_id_to_ip = self.fetch_if_id_to_ip().await?;
+        dbg!(&if_id_to_ip);
+        let mut stats = Vec::new();
+        
+        for (if_id, ip_address) in if_id_to_ip {
+            if let Some(if_stats) = if_id_to_stats.get(&if_id) {
+                stats.push(InterfaceStats {
+                    ip_address,
+                    rx_bytes: Some(if_stats.rx_bytes),
+                    tx_bytes: Some(if_stats.tx_bytes),
+                    rx_packets: Some(if_stats.rx_packets),
+                    tx_packets: Some(if_stats.tx_packets),
+                });
+            }
+        }
+        
+        Ok(stats)
     }
 }
 
@@ -230,5 +387,17 @@ mod tests {
 
         println!("{:#?}", lspdb);
         assert!(lspdb.is_ok());
+    }
+    
+    #[tokio::test]
+    async fn test_fetch_interface_stats() {
+        let client = get_r1_ssh_client().await.unwrap();
+
+        let mut source = IsisSshSource::new(client);
+
+        let interface_stats = source.fetch_stats().await;
+
+        println!("{:#?}", interface_stats);
+        assert!(interface_stats.is_ok());
     }
 }

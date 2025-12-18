@@ -69,6 +69,8 @@
             wayland-protocols
             vulkan-loader
             libGL
+            texliveMedium
+            perf
             
             # libwayland  # Uncomment if you need the static lib
             # nushell     # Uncomment to use nushell as login shell

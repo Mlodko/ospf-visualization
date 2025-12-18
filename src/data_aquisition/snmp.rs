@@ -478,4 +478,41 @@ mod tests {
             dbg!(row);
         }
     }
+    
+    #[tokio::test]
+    async fn test_snmp_walk() {
+        use std::net::{IpAddr, Ipv4Addr};
+        let mut client = SnmpClient::new(
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1161),
+            "public",
+            Version::V2C,
+            None,
+        );
+        let oid = Oid::from_str("1.3.6.1.2.1.4.31.3").unwrap();
+        let query = client.query()
+            .await
+            .unwrap()
+            .oid(oid)
+            .walk();
+
+        let results = query.execute().await.unwrap();
+
+        for result in results {
+            if let RawRouterData::Snmp { oid, value } = &result {
+                match value {
+                    LinkStateValue::Counter32(u) => {
+                        if *u > 0 {
+                            dbg!(result);
+                        }
+                    }
+                    LinkStateValue::Counter64(u) => {
+                        if *u > 0 {
+                            dbg!(result);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 }

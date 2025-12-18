@@ -26,6 +26,8 @@ pub enum LinkStateValue {
     // Counters and metrics  
     Counter32(u32),         // SPF runs, event counters, LSA counts
     
+    Counter64(u64),
+    
     // Time-related
     Timeticks(u32),         // LSA ages, hello intervals, dead intervals (in centiseconds)
     
@@ -49,6 +51,7 @@ impl From<&Value<'_>> for LinkStateValue {
             Value::Timeticks(t) => LinkStateValue::Timeticks(*t),
             Value::Boolean(b) => LinkStateValue::Boolean(*b),
             Value::Unsigned32(u) => LinkStateValue::Unsigned32(*u),
+            Value::Counter64(u) => LinkStateValue::Counter64(*u),
             _ => LinkStateValue::Unknown,
         }
     }

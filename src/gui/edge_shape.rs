@@ -1,7 +1,9 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 
-use egui::{Color32, Pos2, Shape};
+use egui::{Color32, Pos2, Shape, Stroke};
 use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps};
+use petgraph::csr::EdgeIndex;
 use petgraph::{EdgeType, stable_graph::IndexType};
 use uuid::Uuid;
 
@@ -21,6 +23,22 @@ thread_local! {
     static EDGE_EVENTS: RefCell<Vec<EdgeEvent>> = RefCell::new(Vec::new());
     static ANY_GRAPH_HIT: RefCell<bool> = RefCell::new(false);
     static EDGE_LABELS_ENABLED: RefCell<bool> = RefCell::new(false);
+    static EDGE_WEIGHTS: RefCell<HashMap<(Uuid, Uuid), f32>> = RefCell::new(HashMap::new());
+}
+
+pub fn set_edge_weights(weights: HashMap<(Uuid, Uuid), f32>) {
+    EDGE_WEIGHTS.with(|w| *w.borrow_mut() = weights);
+}
+
+pub fn insert_edge_weight(src: Uuid, dst: Uuid, weight: f32) {
+    EDGE_WEIGHTS.with(|w| {
+        let mut weights = w.borrow_mut();
+        weights.insert((src, dst), weight);
+    });
+}
+
+pub fn get_edge_weight(src: Uuid, dst: Uuid) -> Option<f32> {
+    EDGE_WEIGHTS.with(|w| w.borrow().get(&(src, dst)).copied())
 }
 
 /// Enable/disable edge metric labels globally.
@@ -131,8 +149,10 @@ impl<Ty: EdgeType, Ix: IndexType>
         let mut base = ctx.ctx.style().visuals.widgets.inactive.fg_stroke.color;
 
         // Default: no animation
+        let traffic_width_modifier = 2.5;
+        let base_width = 1.5f32 * (1.0 + traffic_width_modifier * get_edge_weight(self.src_uuid.unwrap(), self.dst_uuid.unwrap()).unwrap_or(0.0));
         let mut alpha_factor = 1.0f32;
-        let mut width_scale = 1.0f32;
+        let mut width_scale = 1.0f32 * base_width;
 
         // Use cached identity (set in update()) to query animation state
         if let (Some(src), Some(dst), Some(kind)) = (self.src_uuid, self.dst_uuid, self.kind) {
@@ -176,11 +196,16 @@ impl<Ty: EdgeType, Ix: IndexType>
             (alpha_factor * 255.0) as u8,
         );
         let stroke = egui::Stroke {
-            width: 1.5 * width_scale,
+            width: width_scale,
             color,
         };
-        let mut shapes = vec![Shape::line_segment([a_screen, b_screen], stroke)];
-
+        
+        let line_length = (b_screen - a_screen).length();
+        
+        let mut shapes = match self.kind {
+            Some(EdgeKind::Membership) => vec![Shape::line_segment([a_screen, b_screen], stroke)],
+            _ => Shape::dashed_line(&[a_screen, b_screen], stroke, line_length / 10.0, line_length / 5.0)
+        };
         // Optional metric label:
         if edge_labels_enabled() {
             println!("Metric label enabled");

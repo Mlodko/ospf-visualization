@@ -1,12 +1,13 @@
-use std::str::FromStr;
+use std::{collections::HashMap, net::Ipv4Addr, str::FromStr};
 
 use async_trait::async_trait;
+use egui::Link;
 use snmp2::Oid;
 
 use crate::{data_aquisition::{
     core::{LinkStateValue, RawRouterData},
     snmp::{SnmpClient, SnmpTableRow},
-}, network::router::RouterId};
+}, network::router::{InterfaceStats, RouterId}};
 use crate::parsers::ospf_parser::source::{OspfDataSource, OspfRawRow, OspfSourceError};
 
 /// OSPF-over-SNMP adapter that implements the protocol-centric OspfDataSource.
@@ -35,6 +36,192 @@ impl OspfSnmpSource {
             Some(other) => Err(OspfSourceError::Invalid(format!("unexpected ospfRouterId: {other:?}"))),
             None => Err(OspfSourceError::Invalid("missing ospfRouterId".into())),
         }
+    }
+    
+    pub async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, OspfSourceError> {
+        
+        // Firstly we need to get an IF index -> stats mapping for all interfaces
+        
+        let rx_packets_oid = Oid::from_str("1.3.6.1.2.1.2.2.1.11").unwrap();
+        let tx_packets_oid = Oid::from_str("1.3.6.1.2.1.2.2.1.17").unwrap();
+        let rx_bytes_oid = Oid::from_str("1.3.6.1.2.1.2.2.1.10").unwrap();
+        let tx_bytes_oid = Oid::from_str("1.3.6.1.2.1.2.2.1.16").unwrap();
+        
+        let rx_packets = self.client.query().await.map_err(|e| OspfSourceError::Acquisition(e.to_string()))?
+            .oid(rx_packets_oid)
+            .walk()
+            .execute()
+            .await
+            .map_err(|e| OspfSourceError::Acquisition(e.to_string()))?
+            .iter()
+            .map(|raw| {
+                if let RawRouterData::Snmp { oid, value } = raw {
+                    let if_id = oid.iter().ok_or(OspfSourceError::Invalid("fetch_stats: sub OID doesn't fit into u64".to_string()))?
+                        .last().ok_or(OspfSourceError::Invalid("fetch_stats: couldn't extract IF ID".to_string()))?;
+                    
+                    let rx_packets = if let LinkStateValue::Counter32(v) = value {
+                        *v as u64
+                    } else {
+                        return Err(OspfSourceError::Invalid("fetch_stats: unexpected data type".to_string()));
+                    };
+                    
+                    Ok((if_id, rx_packets))
+                } else {
+                    Err(OspfSourceError::Invalid("fetch_stats: unexpected data type".to_string()))
+                }
+            })
+            .collect::<Result<HashMap<u64, u64>, _>>()?;
+        let tx_packets = self.client.query().await.map_err(|e| OspfSourceError::Acquisition(e.to_string()))?
+            .oid(tx_packets_oid)
+            .walk()
+            .execute()
+            .await
+            .map_err(|e| OspfSourceError::Acquisition(e.to_string()))?
+            .iter()
+            .map(|raw| {
+                if let RawRouterData::Snmp { oid, value } = raw {
+                    let if_id = oid.iter().ok_or(OspfSourceError::Invalid("fetch_stats: sub OID doesn't fit into u64".to_string()))?
+                        .last().ok_or(OspfSourceError::Invalid("fetch_stats: couldn't extract IF ID".to_string()))?;
+                    
+                    let tx_packets = if let LinkStateValue::Counter32(v) = value {
+                        *v as u64
+                    } else {
+                        return Err(OspfSourceError::Invalid("fetch_stats: unexpected data type".to_string()));
+                    };
+                    
+                    Ok((if_id, tx_packets))
+                } else {
+                    return Err(OspfSourceError::Invalid("fetch_stats: unexpected data type".to_string()));
+                }
+            })
+            .collect::<Result<HashMap<u64, u64>, _>>()?;
+        let rx_bytes = self.client.query().await.map_err(|e| OspfSourceError::Acquisition(e.to_string()))?
+            .oid(rx_bytes_oid)
+            .walk()
+            .execute()
+            .await
+            .map_err(|e| OspfSourceError::Acquisition(e.to_string()))?
+            .iter()
+            .map(|raw| {
+                if let RawRouterData::Snmp { oid, value } = raw {
+                    let if_id = oid.iter().ok_or(OspfSourceError::Invalid("fetch_stats: sub OID doesn't fit into u64".to_string()))?
+                        .last().ok_or(OspfSourceError::Invalid("fetch_stats: couldn't extract IF ID".to_string()))?;
+                    
+                    let rx_bytes = if let LinkStateValue::Counter32(v) = value {
+                        *v as u64
+                    } else {
+                        return Err(OspfSourceError::Invalid("fetch_stats: unexpected data type".to_string()));
+                    };
+                    
+                    Ok((if_id, rx_bytes))
+                } else {
+                    return Err(OspfSourceError::Invalid("fetch_stats: unexpected data type".to_string()));
+                }
+            })
+            .collect::<Result<HashMap<u64, u64>, _>>()?;
+        let tx_bytes = self.client.query().await.map_err(|e| OspfSourceError::Acquisition(e.to_string()))?
+            .oid(tx_bytes_oid)
+            .walk()
+            .execute()
+            .await
+            .map_err(|e| OspfSourceError::Acquisition(e.to_string()))?
+            .iter()
+            .map(|raw| {
+                if let RawRouterData::Snmp { oid, value } = raw {
+                    let if_id = oid.iter().ok_or(OspfSourceError::Invalid("fetch_stats: sub OID doesn't fit into u64".to_string()))?
+                        .last().ok_or(OspfSourceError::Invalid("fetch_stats: couldn't extract IF ID".to_string()))?;
+                    
+                    let tx_bytes = if let LinkStateValue::Counter32(v) = value {
+                        *v as u64
+                    } else {
+                        return Err(OspfSourceError::Invalid("fetch_stats: unexpected data type".to_string()));
+                    };
+                    
+                    Ok((if_id, tx_bytes))
+                } else {
+                    return Err(OspfSourceError::Invalid("fetch_stats: unexpected data type".to_string()));
+                }
+            })
+            .collect::<Result<HashMap<u64, u64>, _>>()?;
+        
+        // Now combine the results into a Hashmap<IF ID, Stats>
+        
+        struct Stats {
+            tx_bytes: u64,
+            rx_bytes: u64,
+            tx_packets: u64,
+            rx_packets: u64,
+        }
+        
+        let if_ids = rx_packets.iter().map(|(id, _)| *id);
+        
+        let stats_per_if = if_ids
+            .map(|id| {
+                let tx_bytes = tx_bytes.get(&id).ok_or_else(|| OspfSourceError::Invalid(format!("fetch_stats: missing tx_bytes for interface {}", id)))?;
+                let rx_bytes = rx_bytes.get(&id).ok_or_else(|| OspfSourceError::Invalid(format!("fetch_stats: missing rx_bytes for interface {}", id)))?;
+                let tx_packets = tx_packets.get(&id).ok_or_else(|| OspfSourceError::Invalid(format!("fetch_stats: missing tx_packets for interface {}", id)))?;
+                let rx_packets = rx_packets.get(&id).ok_or_else(|| OspfSourceError::Invalid(format!("fetch_stats: missing rx_packets for interface {}", id)))?;
+                let stats = Stats {
+                    tx_bytes: *tx_bytes,
+                    rx_bytes: *rx_bytes,
+                    tx_packets: *tx_packets,
+                    rx_packets: *rx_packets,
+                };
+                Ok((id, stats))
+            })
+            .collect::<Result<HashMap<u64, Stats>, _>>()?;
+        
+        // Now we grab ip -> if id mapping from 1.3.6.1.2.1.4.20.1.2
+        
+        let ip_map_oid = Oid::from_str("1.3.6.1.2.1.4.20.1.2").unwrap();
+        
+        let if_id_to_ip: HashMap<u64, Ipv4Addr> = self.client.query().await.map_err(|e| OspfSourceError::Invalid(format!("fetch_stats: failed to query ip -> if id mapping: {}", e)))?
+            .oid(ip_map_oid)
+            .walk()
+            .execute()
+            .await
+            .map_err(|e| OspfSourceError::Invalid(format!("fetch_stats: failed to execute ip -> if id mapping query: {}", e)))?
+            .into_iter()
+            .map(|raw| {
+                if let RawRouterData::Snmp { oid, value } = raw {
+                    let if_id = if let LinkStateValue::Integer(i) = value {
+                        i as u64
+                    } else {
+                        return Err(OspfSourceError::Invalid(format!("fetch_stats: invalid if id value: {:?}", value)));
+                    };
+                    
+                    // IP is the last 4 sub-OIDs
+                    let sub_oids: Vec<u64> = oid.iter().ok_or(OspfSourceError::Invalid("fetch_stats: invalid ip address".to_string()))?
+                        .collect();
+                    
+                    let ip_addr_parts = sub_oids.iter()
+                        .skip(sub_oids.len() - 4)
+                        .map(|oid| {
+                            *oid as u8
+                        })
+                        .collect::<Vec<u8>>();
+                    
+                    let ip_addr = Ipv4Addr::new(ip_addr_parts[0], ip_addr_parts[1], ip_addr_parts[2], ip_addr_parts[3]);
+                    
+                    Ok((if_id, ip_addr))
+                } else {
+                    Err(OspfSourceError::Invalid("fetch_stats: invalid data type".to_string()))
+                }
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+            
+        if_id_to_ip.into_iter()
+            .map(|(if_id, ip_addr)| {
+                let stats = stats_per_if.get(&if_id).ok_or(OspfSourceError::Invalid(format!("No stats for interface {}", if_id)))?;
+                Ok(InterfaceStats {
+                    ip_address: std::net::IpAddr::V4(ip_addr),
+                    rx_bytes: Some(stats.rx_bytes),
+                    tx_bytes: Some(stats.tx_bytes),
+                    rx_packets: Some(stats.rx_packets),
+                    tx_packets: Some(stats.tx_packets),
+                })
+            })
+            .collect()
     }
 }
 
@@ -125,5 +312,28 @@ impl OspfDataSource for OspfSnmpSource {
                 })
             })
             .collect()
+    }
+}
+
+mod tests {
+    use std::net::SocketAddr;
+
+    use super::*;
+    
+    #[tokio::test]
+    async fn test_fetch_stats() {
+        let client = SnmpClient::new("127.0.0.1:1161".parse().unwrap(), "public", snmp2::Version::V2C, None);
+        let mut source = OspfSnmpSource::new(client);
+        
+        let stats = source.fetch_stats().await;
+        assert!(stats.is_ok());
+        
+        assert!(stats.as_ref().unwrap().len() > 0);
+        
+        if let Ok(stats) = stats {
+            for stat in stats {
+                dbg!(stat);
+            }
+        }
     }
 }

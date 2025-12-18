@@ -6,7 +6,35 @@ use std::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{network::node::ProtocolData, parsers::isis_parser::core_lsp::{NetAddress, SystemId}};
+use crate::{network::node::ProtocolData, parsers::isis_parser::core_lsp::{SystemId}};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct InterfaceStats {
+    pub ip_address: IpAddr,
+    pub tx_bytes: Option<u64>,
+    pub tx_packets: Option<u64>,
+    pub rx_bytes: Option<u64>,
+    pub rx_packets: Option<u64>,
+}
+
+impl InterfaceStats {
+    pub fn get_weight(&self) -> u64 {
+        let tx_bytes = self.tx_bytes.unwrap_or(0);
+        let rx_bytes = self.rx_bytes.unwrap_or(0);
+        let total_bytes = tx_bytes + rx_bytes;
+        total_bytes
+    }
+    
+    pub fn get_tx_to_rx_ratio(&self) -> f64 {
+        let tx_bytes = self.tx_bytes.unwrap_or(0);
+        let rx_bytes = self.rx_bytes.unwrap_or(0);
+        if rx_bytes == 0 {
+            0.0
+        } else {
+            tx_bytes as f64 / rx_bytes as f64
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(dead_code)]

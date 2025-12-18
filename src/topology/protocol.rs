@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use thiserror::Error;
 
 use crate::{
-    network::node::Node,
+    network::{node::Node, router::InterfaceStats},
     topology::{
         TopologySource,
         source::{SnapshotSource, TopologyError},
@@ -14,9 +14,11 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum AcquisitionError {
+    #[error("Transport error: {0}")]
     Transport(String),
+    #[error("Invalid data: {0}")]
     Invalid(String),
 }
 
@@ -64,6 +66,7 @@ type AcquisitionResult<T> = Result<T, AcquisitionError>;
 pub trait AcquisitionSource<P: RoutingProtocol>: Send + Sync {
     async fn fetch_raw(&mut self) -> AcquisitionResult<Vec<P::RawRecord>>;
     async fn fetch_source_id(&mut self) -> AcquisitionResult<SourceId>;
+    async fn fetch_stats(&mut self) -> AcquisitionResult<Vec<InterfaceStats>>;
 }
 
 /// Routing protocol contract.
@@ -103,6 +106,10 @@ where
     #[allow(unused)]
     pub fn source(&self) -> &S {
         &self.source
+    }
+    
+    pub fn source_mut(&mut self) -> &mut S {
+        &mut self.source
     }
 }
 
@@ -233,6 +240,13 @@ where
     async fn fetch_source_id(&mut self) -> Result<SourceId, TopologyError> {
         self.source
             .fetch_source_id()
+            .await
+            .map_err(TopologyError::from)
+    }
+    
+    async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, TopologyError> {
+        self.source
+            .fetch_stats()
             .await
             .map_err(TopologyError::from)
     }

@@ -16,6 +16,10 @@ services:
         ipv4_address: 172.21.14.11
     cap_add:
       - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     ports:
       - "1161:161/udp"
       - "2221:22/tcp"
@@ -34,6 +38,10 @@ services:
         ipv4_address: 172.21.123.2
     cap_add:
       - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     ports:
       - "1162:161/udp"
       - "2222:22/tcp"
@@ -50,10 +58,14 @@ services:
     networks:
       net_123:
         ipv4_address: 172.21.123.3
-      net_37:
-        ipv4_address: 10.0.37.3
+      #net_37:
+      #  ipv4_address: 10.0.37.3
     cap_add:
       - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     ports:
       - "1163:161/udp"
       - "2223:22/tcp"
@@ -74,6 +86,10 @@ services:
         ipv4_address: 172.21.45.4
     cap_add:
       - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     ports:
       - "1164:161/udp"
       - "2224:22/tcp"
@@ -94,6 +110,10 @@ services:
         ipv4_address: 10.0.56.5
     cap_add:
       - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     ports:
       - "1165:161/udp"
       - "2225:22/tcp"
@@ -114,6 +134,10 @@ services:
         ipv4_address: 10.0.67.6
     cap_add:
       - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     ports:
       - "1166:161/udp"
       - "2226:22/tcp"
@@ -132,10 +156,14 @@ services:
         ipv4_address: 10.0.67.7
       net_78:
         ipv4_address: 172.22.78.7
-      net_37:
-        ipv4_address: 10.0.37.7
+      #net_37:
+      #  ipv4_address: 10.0.37.7
     cap_add:
       - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     ports:
       - "1167:161/udp"
       - "2227:22/tcp"
@@ -154,6 +182,10 @@ services:
         ipv4_address: 172.22.78.8
     cap_add:
       - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     ports:
       - "1168:161/udp"
       - "2228:22/tcp"
@@ -163,10 +195,10 @@ networks:
     ipam:
       config:
         - subnet: 172.21.123.0/24
-  net_37:
-    ipam:
-      config:
-        - subnet: 10.0.37.0/24
+  #net_37:
+  #  ipam:
+  #    config:
+  #      - subnet: 10.0.37.0/24
   net_14:
     ipam:
       config:
