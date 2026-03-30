@@ -7,3 +7,4 @@ pub mod router;
 pub mod node;
 pub mod edge;
 pub mod network_graph;
+pub mod neighbor;

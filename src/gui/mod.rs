@@ -1,6 +1,11 @@
+pub mod actions;
 pub mod app;
+pub mod autopoll;
+pub mod edge_anim;
+pub mod edge_shape;
+pub mod graph_overlay;
+pub mod modules;
+pub mod new_app;
 pub mod node_panel;
 pub mod node_shape;
-pub mod edge_shape;
-pub mod edge_anim;
-pub mod autopoll;
+pub mod tools;

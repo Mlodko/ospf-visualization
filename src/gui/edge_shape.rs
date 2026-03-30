@@ -1,7 +1,9 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use egui::{Color32, Pos2, Shape, Stroke};
+use crate::gui::graph_overlay;
+
+use egui::{Color32, Context, Pos2, Shape, Stroke};
 use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps};
 use petgraph::csr::EdgeIndex;
 use petgraph::{EdgeType, stable_graph::IndexType};
@@ -11,69 +13,79 @@ use crate::gui::app;
 use crate::gui::node_shape::NetworkGraphNodeShape;
 use crate::network::edge::{Edge as NetEdge, EdgeKind, EdgeMetric};
 
-#[derive(Clone, Debug)]
-pub struct EdgeEvent {
-    pub src_uuid: Uuid,
-    pub dst_uuid: Uuid,
-    pub kind: EdgeKind,
-    pub is_manual: bool,
-}
+pub type EdgeEvent = graph_overlay::EdgeEvent;
 
 thread_local! {
-    static EDGE_EVENTS: RefCell<Vec<EdgeEvent>> = RefCell::new(Vec::new());
-    static ANY_GRAPH_HIT: RefCell<bool> = RefCell::new(false);
-    static EDGE_LABELS_ENABLED: RefCell<bool> = RefCell::new(false);
-    static EDGE_WEIGHTS: RefCell<HashMap<(Uuid, Uuid), f32>> = RefCell::new(HashMap::new());
+    static LAST_CTX: RefCell<Option<Context>> = RefCell::new(None);
+}
+
+fn last_ctx() -> Option<Context> {
+    LAST_CTX.with(|ctx| ctx.borrow().clone())
 }
 
 pub fn set_edge_weights(weights: HashMap<(Uuid, Uuid), f32>) {
-    EDGE_WEIGHTS.with(|w| *w.borrow_mut() = weights);
+    if let Some(ctx) = last_ctx() {
+        graph_overlay::set_edge_weights(&ctx, weights);
+    }
 }
 
 pub fn insert_edge_weight(src: Uuid, dst: Uuid, weight: f32) {
-    EDGE_WEIGHTS.with(|w| {
-        let mut weights = w.borrow_mut();
-        weights.insert((src, dst), weight);
-    });
+    if let Some(ctx) = last_ctx() {
+        graph_overlay::insert_edge_weight(&ctx, src, dst, weight);
+    }
 }
 
 pub fn get_edge_weight(src: Uuid, dst: Uuid) -> Option<f32> {
-    EDGE_WEIGHTS.with(|w| w.borrow().get(&(src, dst)).copied())
+    last_ctx().and_then(|ctx| graph_overlay::get_edge_weight(&ctx, src, dst))
 }
 
 /// Enable/disable edge metric labels globally.
 pub fn set_edge_labels_enabled(enabled: bool) {
-    EDGE_LABELS_ENABLED.with(|b| *b.borrow_mut() = enabled);
+    if let Some(ctx) = last_ctx() {
+        graph_overlay::set_edge_labels_enabled(&ctx, enabled);
+    }
 }
 
 /// Read current edge metric label toggle.
 pub fn edge_labels_enabled() -> bool {
-    EDGE_LABELS_ENABLED.with(|b| *b.borrow())
+    last_ctx()
+        .map(|ctx| graph_overlay::edge_labels_enabled(&ctx))
+        .unwrap_or(false)
 }
 
 /// Clear the per-frame edge event queue.
 pub fn clear_edge_events() {
-    EDGE_EVENTS.with(|q| q.borrow_mut().clear());
+    if let Some(ctx) = last_ctx() {
+        graph_overlay::clear_edge_events(&ctx);
+    }
 }
 
 /// Drain the edge event queue, returning all pending events.
 pub fn take_edge_events() -> Vec<EdgeEvent> {
-    EDGE_EVENTS.with(|q| q.borrow_mut().drain(..).collect())
+    last_ctx()
+        .map(|ctx| graph_overlay::take_edge_events(&ctx))
+        .unwrap_or_default()
 }
 
 /// Reset the "any hit" marker to false for the frame.
 pub fn clear_any_hit() {
-    ANY_GRAPH_HIT.with(|f| *f.borrow_mut() = false);
+    if let Some(ctx) = last_ctx() {
+        graph_overlay::clear_any_hit(&ctx);
+    }
 }
 
 /// Mark that at least one graph element was hit (hovered/clicked) in this frame.
 pub fn mark_hit() {
-    ANY_GRAPH_HIT.with(|f| *f.borrow_mut() = true);
+    if let Some(ctx) = last_ctx() {
+        graph_overlay::mark_hit(&ctx);
+    }
 }
 
 /// Read the current value of the "any hit" marker.
 pub fn any_hit() -> bool {
-    ANY_GRAPH_HIT.with(|f| *f.borrow())
+    last_ctx()
+        .map(|ctx| graph_overlay::any_hit(&ctx))
+        .unwrap_or(false)
 }
 
 /// Custom edge shape that draws a simple line and emits click events when selection changes.
@@ -128,6 +140,7 @@ impl<Ty: EdgeType, Ix: IndexType>
         end: &egui_graphs::Node<crate::network::node::Node, NetEdge, Ty, Ix, NetworkGraphNodeShape>,
         ctx: &DrawContext,
     ) -> Vec<Shape> {
+        LAST_CTX.with(|slot| *slot.borrow_mut() = Some(ctx.ctx.clone()));
         // Compute endpoints on node boundaries in canvas space
         let a = start.props().location();
         let b = end.props().location();
@@ -150,7 +163,15 @@ impl<Ty: EdgeType, Ix: IndexType>
 
         // Default: no animation
         let traffic_width_modifier = 2.5;
-        let base_width = 1.5f32 * (1.0 + traffic_width_modifier * get_edge_weight(self.src_uuid.unwrap(), self.dst_uuid.unwrap()).unwrap_or(0.0));
+        let base_width = 1.5f32
+            * (1.0
+                + traffic_width_modifier
+                    * graph_overlay::get_edge_weight(
+                        ctx.ctx,
+                        self.src_uuid.unwrap(),
+                        self.dst_uuid.unwrap(),
+                    )
+                    .unwrap_or(0.0));
         let mut alpha_factor = 1.0f32;
         let mut width_scale = 1.0f32 * base_width;
 
@@ -199,12 +220,17 @@ impl<Ty: EdgeType, Ix: IndexType>
             width: width_scale,
             color,
         };
-        
+
         let line_length = (b_screen - a_screen).length();
-        
+
         let mut shapes = match self.kind {
             Some(EdgeKind::Membership) => vec![Shape::line_segment([a_screen, b_screen], stroke)],
-            _ => Shape::dashed_line(&[a_screen, b_screen], stroke, line_length / 10.0, line_length / 5.0)
+            _ => Shape::dashed_line(
+                &[a_screen, b_screen],
+                stroke,
+                line_length / 10.0,
+                line_length / 5.0,
+            ),
         };
         // Optional metric label:
         if edge_labels_enabled() {
@@ -266,15 +292,18 @@ impl<Ty: EdgeType, Ix: IndexType>
 
         // Emit event when selection transitions from false -> true.
         if props.selected && !self.selected_prev {
-            crate::gui::edge_shape::EDGE_EVENTS.with(|q| {
-                q.borrow_mut().push(crate::gui::edge_shape::EdgeEvent {
-                    src_uuid: props.payload.source_id,
-                    dst_uuid: props.payload.destination_id,
-                    kind: props.payload.kind,
-                    is_manual: props.payload.protocol_tag.as_deref() == Some("MANUAL"),
-                });
-            });
-            crate::gui::edge_shape::mark_hit();
+            if let Some(ctx) = last_ctx() {
+                graph_overlay::push_edge_event(
+                    &ctx,
+                    EdgeEvent {
+                        src_uuid: props.payload.source_id,
+                        dst_uuid: props.payload.destination_id,
+                        kind: props.payload.kind,
+                        is_manual: props.payload.protocol_tag.as_deref() == Some("MANUAL"),
+                    },
+                );
+                graph_overlay::mark_hit(&ctx);
+            }
         }
         self.selected_prev = props.selected;
     }
@@ -292,7 +321,6 @@ impl<Ty: EdgeType, Ix: IndexType>
         pos: Pos2,
     ) -> bool {
         // pos is in canvas coordinates. Do a simple segment distance test (in canvas space).
-        println!("Is inside triggered!");
         let a = start.props().location();
         let b = end.props().location();
         let a_boundary = <NetworkGraphNodeShape as DisplayNode<

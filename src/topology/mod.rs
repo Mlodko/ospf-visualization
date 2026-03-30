@@ -15,6 +15,7 @@ Re-exports:
 */
 
 pub mod ospf_protocol;
+pub mod ospf_bfs_protocol;
 pub mod protocol;
 pub mod source;
 pub mod store;

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, net::Ipv4Addr};
 
 use eframe::egui::Color32;
 use egui::Pos2;
@@ -413,6 +413,7 @@ impl NetworkGraph {
 
                     // Logical Reachability
                     if let Some(ProtocolData::Ospf(data)) = &network.protocol_data {
+                        /*
                         if let OspfPayload::Network(net_payload) = &data.payload {
                             for s in &net_payload.summaries {
                                 // Skip logical reachability edge if detailed network or ABR already attached.
@@ -430,8 +431,85 @@ impl NetworkGraph {
                                 }
                             }
                         }
+                        */
+                        if let OspfPayload::SummaryNetwork(pd) = &data.payload {
+                            let abr_id = &pd.origin_abr;
+                            let abr_uuid = self.graph.nodes_iter()
+                                .find_map(|(_, node)| {
+                                    let node = node.payload();
+                                    if let Some(router) = node.info.router() {
+                                        if router.id == abr_id.clone() {
+                                            return Some(node.id);
+                                        }
+                                    }
+                                    None
+                                });
+                            if let Some(abr_uuid) = abr_uuid {
+                                if seen.insert((abr_uuid, *net_uuid, EdgeKind::LogicalReachability)) {
+                                    let abr_idx = self.node_id_to_index_map.get(&abr_uuid).expect("ABR not found");
+                                    specs.push((*abr_idx, abr_uuid, *net_uuid, EdgeKind::LogicalReachability));
+                                }
+                            }
+                        }
                     }
                 }
+            }
+        }
+        
+        // Handle exceptions
+        {
+            // OSPF Virtual Links
+            {
+                #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+                struct VirtualLink {
+                    a: Ipv4Addr,
+                    b: Ipv4Addr
+                }
+                
+                impl VirtualLink {
+                    fn new(a: Ipv4Addr, b: Ipv4Addr) -> Self {
+                        // This is done to prevent (A, B) and (B, A) being different in the hashset.
+                        if a < b {
+                            VirtualLink { a, b }
+                        } else {
+                            VirtualLink { a: b, b: a }
+                        }
+                    }
+                }
+                
+                let mut visited_links = HashSet::new();
+                let links = self.graph.nodes_iter()
+                    .filter_map(|(node_idx, node)| {
+                        let node = node.payload();
+                        if let Some(router) = node.info.router() {
+                            if let Some(data) = router.protocol_data() {
+                                if let Some(ospf_data) = data.ospf() {
+                                    if let OspfPayload::Router(router_payload) = &ospf_data.payload {
+                                        for link in &router_payload.virtual_links {
+                                            let other_router_id = &link.peer_router_id;
+                                            let link = VirtualLink::new(router.id.ipv4().unwrap(), other_router_id.ipv4().unwrap());
+                                            if visited_links.insert(link) {
+                                                // Find the other router in the graph by router id
+                                                if let Some(other_uuid) = self.graph.nodes_iter().find_map(|(_, other_node)| {
+                                                    let other_node = other_node.payload();
+                                                    if let Some(router) = other_node.info.router() {
+                                                        if router.id == *other_router_id {
+                                                            return Some(other_node.id);
+                                                        }
+                                                    }
+                                                    None
+                                                }) {
+                                                    return Some((node_idx, node.id, other_uuid, EdgeKind::VirtualAdjacency));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        None
+                    });
+                specs.extend(links);
             }
         }
 

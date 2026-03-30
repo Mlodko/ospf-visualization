@@ -203,6 +203,7 @@ impl JsonLsp {
             Some(hex::encode(self.holdtime.to_ne_bytes())),
             self.get_area_address(),
             tlvs,
+            Some(self.id_section.own)
         ))
     }
 }

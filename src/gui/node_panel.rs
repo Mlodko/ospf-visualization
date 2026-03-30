@@ -494,6 +494,14 @@ fn ospf_protocol_data_section(ui: &mut Ui, data: &OspfData) {
             "Link State ID: {}",
             data.link_state_id
         )));
+        ui.add(label_no_wrap(format!(
+            "LS age: {}",
+            data.ls_age
+        )));
+        ui.add(label_no_wrap(format!(
+            "LS sequence number: {}",
+            data.ls_seq_no
+        )));
         if let Some(sum) = data.checksum {
             ui.add(label_no_wrap(format!("LSA checksum: {:x}", sum)));
         }

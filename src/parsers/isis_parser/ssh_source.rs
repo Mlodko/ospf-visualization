@@ -2,8 +2,7 @@ use async_trait::async_trait;
 
 use crate::{
     data_aquisition::ssh::SshClient, network::router::InterfaceStats, parsers::isis_parser::{
-        core_lsp::NetAddress, frr_json_lsp::JsonLspdb, hostname::HostnameMap,
-        protocol::JsonIsisProtocol,
+        bfs_protocol::JsonIsisBfsProtocol, core_lsp::NetAddress, frr_json_lsp::JsonLspdb, hostname::HostnameMap, protocol::JsonIsisProtocol
     }, topology::{
         protocol::{AcquisitionError, AcquisitionSource},
         store::SourceId,
@@ -329,6 +328,45 @@ impl AcquisitionSource<JsonIsisProtocol> for IsisSshSource {
     }
 }
 
+#[async_trait]
+impl AcquisitionSource<JsonIsisBfsProtocol> for IsisSshSource {
+    async fn fetch_raw(&mut self) -> Result<Vec<JsonLspdb>, AcquisitionError> {
+        println!("[IsisSshSource] fetch_raw: start");
+        let lspdb = self.fetch_json_lspdb().await?;
+        println!("[IsisSshSource] fetch_raw: returning 1 JsonLspdb");
+        Ok(vec![lspdb])
+    }
+
+    async fn fetch_source_id(&mut self) -> Result<SourceId, AcquisitionError> {
+        // IMPORTANT: call the inherent method explicitly to avoid accidental recursion.
+        // We have an inherent async method `fetch_source_id(&self)` above; call it with an explicit receiver.
+        println!("[IsisSshSource] trait fetch_source_id: delegating to inherent method");
+        IsisSshSource::fetch_source_id(&*self).await
+    }
+    
+    async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, AcquisitionError> {
+        let if_id_to_stats = self.fetch_if_id_to_stats().await?;
+        dbg!(&if_id_to_stats);
+        let if_id_to_ip = self.fetch_if_id_to_ip().await?;
+        dbg!(&if_id_to_ip);
+        let mut stats = Vec::new();
+        
+        for (if_id, ip_address) in if_id_to_ip {
+            if let Some(if_stats) = if_id_to_stats.get(&if_id) {
+                stats.push(InterfaceStats {
+                    ip_address,
+                    rx_bytes: Some(if_stats.rx_bytes),
+                    tx_bytes: Some(if_stats.tx_bytes),
+                    rx_packets: Some(if_stats.rx_packets),
+                    tx_packets: Some(if_stats.tx_packets),
+                });
+            }
+        }
+        
+        Ok(stats)
+    }
+}
+
 mod tests {
     use crate::data_aquisition::ssh::SshError;
 
@@ -395,7 +433,7 @@ mod tests {
 
         let mut source = IsisSshSource::new(client);
 
-        let interface_stats = source.fetch_stats().await;
+        let interface_stats = <IsisSshSource as AcquisitionSource<JsonIsisBfsProtocol>>::fetch_stats(&mut source).await;
 
         println!("{:#?}", interface_stats);
         assert!(interface_stats.is_ok());

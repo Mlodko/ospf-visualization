@@ -19,7 +19,6 @@ use crate::{
 /*
 Due to how bad FRR's LSPDB JSON output is, we need to get the VRF data to get the actual
 System ID for all LSPs instead of hostnames.
-
 */
 pub struct JsonIsisProtocol {
     hostname_map: HostnameMap,
@@ -34,10 +33,12 @@ impl JsonIsisProtocol {
         let id = RouterId::IsIs(lsp.system_id.clone());
         let net_address = lsp.get_net_address();
         let protocol_data = ProtocolData::IsIs(IsIsData {
+            lsp: lsp.clone(),
             is_level: lsp.is_level,
             lsp_id: lsp.lsp_id,
             tlvs: lsp.tlvs,
             net_address: net_address,
+            owned: lsp.owned
         });
 
         Ok(Router {
@@ -49,10 +50,12 @@ impl JsonIsisProtocol {
 
     fn lsp_to_network(&self, lsp: Lsp) -> Result<Network, ProtocolTopologyError> {
         let protocol_data = ProtocolData::IsIs(IsIsData {
+            lsp: lsp.clone(),
             net_address: lsp.get_net_address(),
             is_level: lsp.is_level,
             lsp_id: lsp.lsp_id,
             tlvs: lsp.tlvs,
+            owned: lsp.owned,
         });
 
         // Moved to post_processing - pseudonode LSP doesn't hold the IP prefix
@@ -196,64 +199,6 @@ impl RoutingProtocol for JsonIsisProtocol {
                 net_idx,
                 router_subset.len()
             );
-
-            /*
-            // Figure out network's NET address, find the DIS and copy its area address
-            let network_net_address = if let NodeInfo::Network(net) = &nodes[net_idx].info {
-                if let Some(ProtocolData::IsIs(data)) = &net.protocol_data {
-                    // Inline DIS lookup using router indices (avoid holding &Node refs across mutable borrows).
-                    let dis_router = {
-                        let mut found: Option<Router> = None;
-                        for &r_idx in &router_subset {
-                            if let NodeInfo::Router(router) = &nodes[r_idx].info {
-                                if let Some(ProtocolData::IsIs(rdata)) = &router.protocol_data {
-                                    if data.lsp_id.is_pseudonode_of(&rdata.lsp_id) {
-                                        found = Some(router.clone());
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        found
-                    };
-
-                    if let Some(dis_router) = dis_router {
-                        println!("Found DIS router: {:?}", dis_router);
-                        if let RouterId::IsIs(net_address) = dis_router.id {
-                            let area_address = net_address.area_address.clone();
-                            let system_id = data.lsp_id.get_system_id().map_err(|e| {
-                                ProtocolTopologyError::Semantic(format!(
-                                    "Couldn't infer system ID: {}",
-                                    e
-                                ))
-                            })?;
-                            let net_addr = NetAddress {
-                                area_address,
-                                system_id,
-                            };
-                            println!("Found NET address: {}", &net_addr);
-                            Ok(net_addr)
-                        } else {
-                            Err(ProtocolTopologyError::Semantic(
-                                "Couldn't find ISIS data in DIS".to_string(),
-                            ))
-                        }
-                    } else {
-                        Err(ProtocolTopologyError::Semantic(
-                            "Couldn't find DIS router".to_string(),
-                        ))
-                    }
-                } else {
-                    Err(ProtocolTopologyError::Semantic(
-                        "Couldn't find ISIS data in network node".to_string(),
-                    ))
-                }
-            } else {
-                Err(ProtocolTopologyError::Semantic(
-                    "Node is not a network node".to_string(),
-                ))
-            }?;
-            */
 
             // Resolve prefix with diagnostics: capture call and any error.
             // Build a temporary slice of &Node from router indices so we can pass the expected type

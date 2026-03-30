@@ -43,8 +43,16 @@ pub struct Lsp {
     pub holdtime: Option<String>,
     /// Whatever that means...
     pub area_addr: Option<AreaAddress>,
+    /// If the LSP is owned by the source router (option since I'm not sure if it's standard info to provide)
+    pub owned: Option<bool>,
     /// The list of TLVs (Type-Length-Value) contained in this LSP.
     pub tlvs: Vec<Tlv>,
+}
+
+impl PartialEq for Lsp {
+    fn eq(&self, other: &Self) -> bool {
+        self.lsp_id == other.lsp_id
+    }
 }
 
 impl Lsp {
@@ -55,7 +63,8 @@ impl Lsp {
         sequence_number: Option<String>,
         holdtime: Option<String>,
         area_addr: Option<AreaAddress>,
-        tlvs: Vec<Tlv>
+        tlvs: Vec<Tlv>,
+        owned: Option<bool>,
     ) -> Self {
         Self {
             lsp_id,
@@ -64,7 +73,8 @@ impl Lsp {
             sequence_number,
             holdtime,
             area_addr,
-            tlvs
+            tlvs,
+            owned,
         }
     }
     
@@ -185,16 +195,16 @@ pub enum Tlv {
     AreaAddresses(AreaAddressesTlv),
     /// TLV #2: IS Reachability — describes neighbors and link metrics.
     IsReachability(IsReachabilityTlv),
-    /// TLV #137: Hostname — the router's human-readable name.
-    Hostname(String),
-    /// TLV #128: IP Reachability — IPv4 prefixes directly connected or redistributed by this router.
-    IpReachability(IpReachabilityTlv),
     /// TLV #22: Extended IS Reachability — describes neighbors and link metrics.
     ExtendedReachability(IsExtendedReachabilityTlv),
+    /// TLV #128: IP Reachability — IPv4 prefixes directly connected or redistributed by this router.
+    IpReachability(IpReachabilityTlv),
+    /// TLV #135: 
+    ExtendedIpReachability(ExtendedIpReachabilityTlv),
+    /// TLV #137: Hostname — the router's human-readable name.
+    Hostname(String),
     /// TLV #242: Router Capability — router's capabilities (e.g., TE Router ID, flags).
     RouterCapability(RouterCapabilityTlv),
-    /// TLV #135: 
-    ExtendedIpReachability(ExtendedIpReachabilityTlv)
 }
 
 impl Tlv {
@@ -262,6 +272,12 @@ impl IsReachabilityTlv {
 pub struct IpReachabilityTlv {
     /// List of IPv4 prefixes and their associated metrics and up/down status.
     prefixes: Vec<Prefix>,
+}
+
+impl IpReachabilityTlv {
+    pub fn prefixes_iter(&self) -> impl Iterator<Item = &Prefix> {
+        self.prefixes.iter()
+    }
 }
 
 /// TLV #1: Area Addresses — lists all IS-IS area addresses this router belongs to.
@@ -545,6 +561,16 @@ pub enum IsLevel {
     Level2,
     /// Both Level 1 and Level 2 (rare, but possible)
     Level1And2,
+}
+
+impl Display for IsLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Level1 => write!(f, "Level 1"),
+            Self::Level2 => write!(f, "Level 2"),
+            Self::Level1And2 => write!(f, "Level 1/2"),
+        }
+    }
 }
 
 mod tests {

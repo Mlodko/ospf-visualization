@@ -45,6 +45,33 @@ pub enum RouterId {
     Other(String),
 }
 
+impl RouterId {
+    pub fn ipv4(&self) -> Option<Ipv4Addr> {
+        match self {
+            RouterId::Ipv4(addr) => Some(*addr),
+            _ => None,
+        }
+    }
+    pub fn ipv6(&self) -> Option<Ipv6Addr> {
+        match self {
+            RouterId::Ipv6(addr) => Some(*addr),
+            _ => None,
+        }
+    }
+    pub fn is_is(&self) -> Option<SystemId> {
+        match self {
+            RouterId::IsIs(id) => Some(id.clone()),
+            _ => None,
+        }
+    }
+    pub fn other(&self) -> Option<&str> {
+        match self {
+            RouterId::Other(string) => Some(string),
+            _ => None,
+        }
+    }
+}
+
 // Implementing Serialize and Deserialize manually because they're used as keys, which must be strings
 
 impl Serialize for RouterId {
@@ -133,6 +160,16 @@ pub struct Router {
     pub id: RouterId,
     pub interfaces: Vec<IpAddr>,
     pub protocol_data: Option<ProtocolData>,
+}
+
+impl Router {
+    pub fn protocol_data(&self) -> Option<&ProtocolData> {
+        self.protocol_data.as_ref()
+    }
+    
+    pub fn protocol_data_mut(&mut self) -> Option<&mut ProtocolData> {
+        self.protocol_data.as_mut()
+    }
 }
 
 impl Display for Router {

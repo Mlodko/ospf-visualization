@@ -1,9 +1,12 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 
+use crate::gui::graph_overlay::{self, PathPreview};
+
 use catppuccin_egui::Theme;
+use egui::epaint::TextShape;
 use egui::{Color32, Pos2, Shape, Stroke, Vec2, epaint::CircleShape};
-use egui::{ColorImage, Context, TextureId, TextureOptions};
+use egui::{ColorImage, Context, FontFamily, FontId, TextureId, TextureOptions};
 use egui_graphs::{DisplayNode, DrawContext, NodeProps};
 
 use petgraph::{EdgeType, stable_graph::IndexType};
@@ -17,12 +20,15 @@ use crate::gui::app;
 use crate::network::node::{Node, NodeInfo};
 use crate::network::router::RouterId;
 
+pub const DASH_LENGTH: f32 = 8.0;
+pub const GAP_LENGTH: f32 = 6.0;
+
 thread_local! {
     static ROUTER_TEX: RefCell<Option<TextureHandle>> = RefCell::new(None);
     static NETWORK_TEX: RefCell<Option<TextureHandle>> = RefCell::new(None);
 }
 
-// Rasterize SVG bytes to a square RGBA buffer at the given target_px (keeps aspect)
+/// Rasterize SVG bytes to a square RGBA buffer at the given target_px (keeps aspect)
 fn rasterize_svg(svg_bytes: &[u8], target_px: u32) -> Option<ColorImage> {
     let opt = usvg::Options::default();
     let tree = Tree::from_data(svg_bytes, &opt).ok()?;
@@ -114,18 +120,10 @@ pub struct NetworkGraphNodeShape {
 }
 
 // Thread-local overlay collector populated during shapes() and consumed after the GraphView is drawn.
-#[derive(Clone)]
-#[allow(dead_code)]
-pub struct LabelOverlay {
-    pub center: Pos2,
-    pub circle_radius: f32,
-    pub text: String,
-    pub color: Color32,
-}
+pub type LabelOverlay = graph_overlay::LabelOverlay;
 
 thread_local! {
     static LABEL_OVERLAY: RefCell<Vec<LabelOverlay>> = RefCell::new(Vec::new());
-    // Current hovered OSPF area for the frame, set by hovered node during update()
     static HOVERED_SOURCE_ID: RefCell<Option<RouterId>> = RefCell::new(None);
     // Global toggle for partition highlighting
     static HIGHLIGHT_ENABLED: RefCell<bool> = RefCell::new(true);
@@ -133,35 +131,35 @@ thread_local! {
     static PATH_HIGHLIGHT: RefCell<HashSet<Uuid>> = RefCell::new(HashSet::new());
 }
 
-pub fn clear_path_highlight() {
-    PATH_HIGHLIGHT.with(|v| v.borrow_mut().clear());
+pub fn clear_path_highlight(ctx: &Context) {
+    graph_overlay::clear_path_highlight(ctx);
 }
 
-pub fn set_path_highlight(uuids: impl Iterator<Item = Uuid>) {
-    PATH_HIGHLIGHT.with(|v| v.borrow_mut().extend(uuids))
+pub fn set_path_highlight(ctx: &Context, uuids: impl Iterator<Item = Uuid>) {
+    graph_overlay::set_path_highlight(ctx, uuids);
 }
 
 /// Clear the hovered-area state at the start of a frame.
-pub fn clear_area_highlight() {
-    HOVERED_SOURCE_ID.with(|v| *v.borrow_mut() = None);
+pub fn clear_area_highlight(ctx: &Context) {
+    graph_overlay::clear_area_highlight(ctx);
 }
 
 /// Enable/disable partition highlighting globally.
-pub fn set_partition_highlight_enabled(enabled: bool) {
-    HIGHLIGHT_ENABLED.with(|v| *v.borrow_mut() = enabled);
+pub fn set_partition_highlight_enabled(ctx: &Context, enabled: bool) {
+    graph_overlay::set_partition_highlight_enabled(ctx, enabled);
 }
 
 /// Read current partition highlighting toggle.
-pub fn partition_highlight_enabled() -> bool {
-    HIGHLIGHT_ENABLED.with(|v| *v.borrow())
+pub fn partition_highlight_enabled(ctx: &Context) -> bool {
+    graph_overlay::partition_highlight_enabled(ctx)
 }
 
-pub fn clear_label_overlays() {
-    LABEL_OVERLAY.with(|v| v.borrow_mut().clear());
+pub fn clear_label_overlays(ctx: &Context) {
+    graph_overlay::clear_label_overlays(ctx);
 }
 
-pub fn take_label_overlays() -> Vec<LabelOverlay> {
-    LABEL_OVERLAY.with(|v| v.borrow_mut().drain(..).collect())
+pub fn take_label_overlays(ctx: &Context) -> Vec<LabelOverlay> {
+    graph_overlay::take_label_overlays(ctx)
 }
 
 impl From<NodeProps<Node>> for NetworkGraphNodeShape {
@@ -201,13 +199,21 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
     }
 
     fn shapes(&mut self, ctx: &egui_graphs::DrawContext) -> Vec<Shape> {
-        let mut res = Vec::with_capacity(4);
+        let mut shapes = Vec::new();
         let circle_center = ctx.meta.canvas_to_screen_pos(self.pos);
         let circle_radius = ctx.meta.canvas_to_screen_size(self.radius);
 
+        // Path preview
+        if let Some(preview) = self.should_draw_path_preview(ctx) {
+            self.draw_path_preview(ctx, circle_center, &mut shapes, preview);
+        }
+
         // Partition highlight recompute
-        let highlight_on = partition_highlight_enabled();
-        let hovered_src = HOVERED_SOURCE_ID.with(|v| (*v.borrow()).clone());
+        let highlight_on = partition_highlight_enabled(ctx.ctx);
+        let hovered_src = graph_overlay::hovered_source_id(ctx.ctx);
+        if highlight_on && self.hovered {
+            graph_overlay::set_hovered_source_id(ctx.ctx, self.source_id.clone());
+        }
         self.highlighted = highlight_on
             && hovered_src.is_some()
             && self.source_id.is_some()
@@ -243,10 +249,10 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
             NodeType::Network => network_texture_id(ctx.ctx),
         };
         let uv = egui::Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
-        res.push(Shape::image(tex_id, rect, uv, self.effective_color(ctx)));
+        shapes.push(Shape::image(tex_id, rect, uv, self.effective_color(ctx)));
 
         // Base circle stroke (for highlight fade ring)
-        res.push(
+        shapes.push(
             CircleShape {
                 center: circle_center,
                 radius: circle_radius,
@@ -274,7 +280,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
                 width: 2.0 * fade_origin,
                 color: ring_color,
             };
-            res.push(
+            shapes.push(
                 CircleShape {
                     center: circle_center,
                     radius: ring_radius,
@@ -286,17 +292,18 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
         }
 
         if self.is_interacted() {
-            LABEL_OVERLAY.with(|v| {
-                v.borrow_mut().push(LabelOverlay {
+            graph_overlay::push_label_overlay(
+                ctx.ctx,
+                LabelOverlay {
                     center: circle_center,
                     circle_radius,
                     text: self.label.clone(),
                     color: fill,
-                });
-            });
+                },
+            );
         }
 
-        let path_highlighted: bool = PATH_HIGHLIGHT.with_borrow(|v| v.contains(&self.node_uuid));
+        let path_highlighted: bool = graph_overlay::is_path_highlighted(ctx.ctx, &self.node_uuid);
 
         let fade_path = ctx.ctx.animate_bool(
             egui::Id::new(("path_highlight", self.node_uuid)),
@@ -311,7 +318,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
                 width: 2.0 * fade_path,
                 color: ring_color,
             };
-            res.push(
+            shapes.push(
                 CircleShape {
                     center: circle_center,
                     radius: ring_radius,
@@ -321,8 +328,14 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
                 .into(),
             );
         }
+        
+        let galley = self.label_galley(ctx, circle_radius, self.effective_color(ctx));
+        
+        let label_shape = Self::label_shape(galley, circle_center, circle_radius, self.effective_color(ctx));
+        
+        shapes.push(label_shape.into());
 
-        res
+        shapes
     }
 
     fn update(&mut self, state: &NodeProps<Node>) {
@@ -336,9 +349,6 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
         self.theme = app::get_theme();
 
         // If highlighting is enabled and this node is hovered, publish its partition (SourceId) for frame-wide highlight
-        if partition_highlight_enabled() && self.hovered {
-            HOVERED_SOURCE_ID.with(|v| *v.borrow_mut() = self.source_id.clone());
-        }
     }
 }
 
@@ -347,7 +357,7 @@ impl NetworkGraphNodeShape {
         self.selected
     }
 
-    fn effective_color(&self, ctx: &DrawContext) -> Color32 {
+    fn effective_color(&self, _ctx: &DrawContext) -> Color32 {
         let mut base = match self.node_type {
             NodeType::Router => self.theme.blue,
             NodeType::Network => self.theme.green,
@@ -382,6 +392,62 @@ impl NetworkGraphNodeShape {
         } else {
             Stroke::default()
         }
+    }
+
+    fn should_draw_path_preview(&self, ctx: &DrawContext) -> Option<PathPreview> {
+        graph_overlay::path_preview(ctx.ctx)
+            .filter(|preview| preview.start_uuid() == self.node_uuid)
+    }
+
+    fn draw_path_preview(
+        &self,
+        ctx: &DrawContext,
+        circle_center: Pos2,
+        shapes: &mut Vec<Shape>,
+        preview: PathPreview,
+    ) {
+        let cursor_pos = preview.cursor_screen_pos();
+
+        let base_color = ctx.ctx.style().visuals.widgets.inactive.fg_stroke.color;
+        let color = base_color.gamma_multiply(0.6);
+        let stroke = Stroke::new(1.5, color);
+
+        // Change this later to animate the line
+        let dash_offset = preview.dash_phase();
+
+        let line = egui::Shape::dashed_line_with_offset(
+            &[circle_center, cursor_pos],
+            stroke,
+            &[DASH_LENGTH],
+            &[GAP_LENGTH],
+            dash_offset,
+        );
+        shapes.extend(line);
+    }
+    
+    fn label_galley(
+            &self,
+            ctx: &DrawContext,
+            radius: f32,
+            color: Color32,
+        ) -> std::sync::Arc<egui::Galley> {
+            ctx.ctx.fonts_mut(|f| {
+                f.layout_no_wrap(
+                    self.label.clone(),
+                    FontId::new(radius, FontFamily::Monospace),
+                    color,
+                )
+            })
+        }
+
+    fn label_shape(
+        galley: std::sync::Arc<egui::Galley>,
+        center: Pos2,
+        radius: f32,
+        color: Color32,
+    ) -> Shape {
+        let label_pos = Pos2::new(center.x - galley.size().x / 2., center.y - radius * 2.);
+        TextShape::new(label_pos, galley, color).into()
     }
 }
 

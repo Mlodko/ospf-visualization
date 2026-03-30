@@ -1,7 +1,33 @@
+# Template
+# r#:
+#   build: .
+#   container_name: r#
+#   privileged: true
+#   hostname: r#
+#   volumes:
+#     - ./r#/frr.conf:/etc/frr/frr.conf
+#     - ./snmpd.conf:/etc/snmp/snmpd.conf
+#     - ./ospfd.conf:/etc/frr/ospfd.conf
+#     - ./isisd.conf:/etc/frr/isisd.conf
+#   networks:
+#     net_ext:
+#       ipv4_address: 
+#     net_1234:
+#       ipv4_address: 
+#   cap_add:
+#     - NET_BIND_SERVICE
+#   sysctls:
+#     net.ipv4.ip_forward: "1"
+#     net.ipv4.conf.all.rp_filter: "0"
+#     net.ipv4.conf.default.rp_filter: "0"
+#   ports:
+#     - "116#:161/udp"
+#     - "222#:22/tcp"
+
 services:
   r1:
     build: .
-    container_name: r1
+    container_name: c2_r1
     privileged: true
     hostname: r1
     volumes:
@@ -10,10 +36,10 @@ services:
       - ./ospfd.conf:/etc/frr/ospfd.conf
       - ./isisd.conf:/etc/frr/isisd.conf
     networks:
-      net_123:
-        ipv4_address: 172.21.123.11
-      net_14:
-        ipv4_address: 172.21.14.11
+      net_ext:
+        ipv4_address: 203.0.113.2
+      net_1234:
+        ipv4_address: 20.20.20.11
     cap_add:
       - NET_BIND_SERVICE
     sysctls:
@@ -25,7 +51,7 @@ services:
       - "2221:22/tcp"
   r2:
     build: .
-    container_name: r2
+    container_name: c2_r2
     privileged: true
     hostname: r2
     volumes:
@@ -34,8 +60,10 @@ services:
       - ./ospfd.conf:/etc/frr/ospfd.conf
       - ./isisd.conf:/etc/frr/isisd.conf
     networks:
-      net_123:
-        ipv4_address: 172.21.123.2
+      net_1234:
+        ipv4_address: 20.20.20.2
+      net_25:
+        ipv4_address: 192.168.2.2
     cap_add:
       - NET_BIND_SERVICE
     sysctls:
@@ -47,7 +75,7 @@ services:
       - "2222:22/tcp"
   r3:
     build: .
-    container_name: r3
+    container_name: c2_r3
     privileged: true
     hostname: r3
     volumes:
@@ -56,10 +84,12 @@ services:
       - ./ospfd.conf:/etc/frr/ospfd.conf
       - ./isisd.conf:/etc/frr/isisd.conf
     networks:
-      net_123:
-        ipv4_address: 172.21.123.3
-      #net_37:
-      #  ipv4_address: 10.0.37.3
+      net_1234:
+        ipv4_address: 20.20.20.3
+      net_37:
+        ipv4_address: 192.168.6.3
+      net_3910:
+        ipv4_address: 192.168.3.3
     cap_add:
       - NET_BIND_SERVICE
     sysctls:
@@ -71,7 +101,7 @@ services:
       - "2223:22/tcp"
   r4:
     build: .
-    container_name: r4
+    container_name: c2_r4
     privileged: true
     hostname: r4
     volumes:
@@ -80,10 +110,10 @@ services:
       - ./ospfd.conf:/etc/frr/ospfd.conf
       - ./isisd.conf:/etc/frr/isisd.conf
     networks:
-      net_14:
-        ipv4_address: 172.21.14.4
+      net_1234:
+        ipv4_address: 20.20.20.4
       net_45:
-        ipv4_address: 172.21.45.4
+        ipv4_address: 192.168.1.4
     cap_add:
       - NET_BIND_SERVICE
     sysctls:
@@ -95,7 +125,7 @@ services:
       - "2224:22/tcp"
   r5:
     build: .
-    container_name: r5
+    container_name: c2_r5
     privileged: true
     hostname: r5
     volumes:
@@ -104,10 +134,12 @@ services:
       - ./ospfd.conf:/etc/frr/ospfd.conf
       - ./isisd.conf:/etc/frr/isisd.conf
     networks:
+      net_25:
+        ipv4_address: 192.168.2.5
       net_45:
-        ipv4_address: 172.21.45.5
+        ipv4_address: 192.168.1.5
       net_56:
-        ipv4_address: 10.0.56.5
+        ipv4_address: 192.168.20.5
     cap_add:
       - NET_BIND_SERVICE
     sysctls:
@@ -119,7 +151,7 @@ services:
       - "2225:22/tcp"
   r6:
     build: .
-    container_name: r6
+    container_name: c2_r6
     privileged: true
     hostname: r6
     volumes:
@@ -129,9 +161,7 @@ services:
       - ./isisd.conf:/etc/frr/isisd.conf
     networks:
       net_56:
-        ipv4_address: 10.0.56.6
-      net_67:
-        ipv4_address: 10.0.67.6
+        ipv4_address: 192.168.20.6
     cap_add:
       - NET_BIND_SERVICE
     sysctls:
@@ -143,7 +173,7 @@ services:
       - "2226:22/tcp"
   r7:
     build: .
-    container_name: r7
+    container_name: c2_r7
     privileged: true
     hostname: r7
     volumes:
@@ -152,12 +182,10 @@ services:
       - ./ospfd.conf:/etc/frr/ospfd.conf
       - ./isisd.conf:/etc/frr/isisd.conf
     networks:
-      net_67:
-        ipv4_address: 10.0.67.7
+      net_37:
+        ipv4_address: 192.168.6.7
       net_78:
-        ipv4_address: 172.22.78.7
-      #net_37:
-      #  ipv4_address: 10.0.37.7
+        ipv4_address: 20.20.30.7
     cap_add:
       - NET_BIND_SERVICE
     sysctls:
@@ -169,7 +197,7 @@ services:
       - "2227:22/tcp"
   r8:
     build: .
-    container_name: r8
+    container_name: c2_r8
     privileged: true
     hostname: r8
     volumes:
@@ -179,7 +207,7 @@ services:
       - ./isisd.conf:/etc/frr/isisd.conf
     networks:
       net_78:
-        ipv4_address: 172.22.78.8
+        ipv4_address: 20.20.30.8
     cap_add:
       - NET_BIND_SERVICE
     sysctls:
@@ -189,33 +217,82 @@ services:
     ports:
       - "1168:161/udp"
       - "2228:22/tcp"
-
+  r9:
+    build: .
+    container_name: c2_r9
+    privileged: true
+    hostname: r9
+    volumes:
+      - ./r9/frr.conf:/etc/frr/frr.conf
+      - ./snmpd.conf:/etc/snmp/snmpd.conf
+      - ./ospfd.conf:/etc/frr/ospfd.conf
+      - ./isisd.conf:/etc/frr/isisd.conf
+    networks:
+      net_3910:
+        ipv4_address: 192.168.3.9
+    cap_add:
+      - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
+    ports:
+      - "1169:161/udp"
+      - "2229:22/tcp"
+  r10:
+    build: .
+    container_name: c2_r10
+    privileged: true
+    hostname: r10
+    volumes:
+      - ./r10/frr.conf:/etc/frr/frr.conf
+      - ./snmpd.conf:/etc/snmp/snmpd.conf
+      - ./ospfd.conf:/etc/frr/ospfd.conf
+      - ./isisd.conf:/etc/frr/isisd.conf
+    networks:
+      net_3910:
+        ipv4_address: 192.168.3.10
+    cap_add:
+      - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
+    ports:
+      - "11610:161/udp"
+      - "22210:22/tcp"
 networks:
-  net_123:
+  net_ext:
     ipam:
       config:
-        - subnet: 172.21.123.0/24
-  #net_37:
-  #  ipam:
-  #    config:
-  #      - subnet: 10.0.37.0/24
-  net_14:
+        - subnet: 203.0.113.0/30
+  net_1234:
     ipam:
       config:
-        - subnet: 172.21.14.0/24
+        - subnet: 20.20.20.0/24
+  net_25:
+    ipam:
+      config:
+        - subnet: 192.168.2.0/24
   net_45:
     ipam:
       config:
-        - subnet: 172.21.45.0/24
+        - subnet: 192.168.1.0/24
   net_56:
     ipam:
       config:
-        - subnet: 10.0.56.0/24
-  net_67:
+        - subnet: 192.168.20.0/24
+  net_3910:
     ipam:
       config:
-        - subnet: 10.0.67.0/24
+        - subnet: 192.168.3.0/24
+  net_37:
+    ipam:
+      config:
+        - subnet: 192.168.6.0/24
   net_78:
     ipam:
       config:
-        - subnet: 172.22.78.0/24
+        - subnet: 20.20.30.0/24
+  
+          

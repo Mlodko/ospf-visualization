@@ -84,10 +84,10 @@
 
           shellHook = ''
             echo "🚀 Starting FRR container..."
-            docker compose -f ./router_configs/docker-compose.yml up -d --build
+            docker compose -f ./router_configs/config_2/docker-compose.yml up -d --build
             echo "✅ FRR running at 172.20.0.10 (SNMP on localhost:161)"
             echo "🔧 Test: snmpwalk -v2c -c public localhost:161 1.3.6.1.2.1.1"
-            trap 'docker compose -f ./router_configs/docker-compose.yml down' EXIT
+            trap 'docker compose -f ./router_configs/config_2/docker-compose.yml down' EXIT
 
             echo "Using Rust toolchain: $(rustc --version)"
             export CARGO_HOME="$HOME/.cargo"

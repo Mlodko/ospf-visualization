@@ -20,7 +20,7 @@ use crate::{
 use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet}, net::IpAddr, time::SystemTime
+    collections::{HashMap, HashSet}, fmt::{Display, Formatter}, net::IpAddr, time::SystemTime
 };
 use thiserror::Error;
 use uuid::Uuid;

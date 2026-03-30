@@ -8,19 +8,21 @@ use std::time::Duration;
 use std::hash::Hasher;
 
 use crate::data_aquisition::ssh::SshClient;
-use crate::gui::autopoll::SourceSpec;
+use crate::gui::autopoll::{AutoPoller, PollMessage, SourceSpec};
 use crate::gui::edge_anim;
 use crate::gui::edge_shape::{self, NetworkGraphEdgeShape};
 use crate::gui::node_panel::{
-    FloatingNodePanel, bullet_list, collapsible_section, protocol_data_section
+    FloatingNodePanel, bullet_list, collapsible_section, protocol_data_section,
 };
 use crate::gui::node_shape::{self, clear_path_highlight};
 use crate::network::edge::EdgeKind;
 use crate::network::node::NodeInfo;
 
 use crate::network::router::InterfaceStats;
-use crate::parsers::isis_parser::topology::IsIsTopology;
-use crate::topology::protocol::FederationError;
+use crate::parsers::isis_parser::topology::{IsIsBfsTopology, IsIsTopology};
+use crate::topology::ospf_bfs_protocol::OspfBfsProtocol;
+use crate::topology::ospf_protocol::OspfBfsSnmpTopology;
+use crate::topology::protocol::{FederationError, Topology};
 use crate::topology::source::SnapshotSource;
 use crate::topology::store::{MergeConfig, SourceId, SourceState, TopologyStore};
 use crate::{
@@ -134,15 +136,10 @@ struct App {
     draw_first: Option<NodeIndex>,
     selected_edge: Option<(Uuid, Uuid, EdgeKind)>,
     previous_manual_metric: Option<u32>,
-    
-    source_specs: HashMap<SourceId, SourceSpec>,
-    autopoll_enabled: bool,
-    autopoll_interval: Duration,
-    autopoll_interval_tx: Option<tokio::sync::watch::Sender<Duration>>,
-    poll_tx: Option<std::sync::mpsc::Sender<PollResult>>,
-    poll_rx: Option<std::sync::mpsc::Receiver<PollResult>>,
-    autopoll_handles: Vec<tokio::task::JoinHandle<()>>,
-    
+
+    autopoller: AutoPoller,
+    autopoll_enabled_gui: bool,
+
     // SNMP source switching state
     snmp_host: String,
     snmp_port: u16,
@@ -150,7 +147,9 @@ struct App {
     clear_sources_on_switch: bool,
     // Quick & dirty: shared result storage for background SNMP connect -> snapshot result
     snmp_connect_res: std::sync::Arc<
-        std::sync::Mutex<Option<Result<(SourceId, Vec<Node>, Vec<InterfaceStats>, SourceSpec), String>>>,
+        std::sync::Mutex<
+            Option<Result<(SourceId, Vec<Node>, Vec<InterfaceStats>, SourceSpec), String>>,
+        >,
     >,
     // Quick & dirty: flag indicating SNMP connect in progress
     snmp_connect_pending: bool,
@@ -163,18 +162,14 @@ struct App {
     ssh_clear_sources_on_switch: bool,
     // Quick & dirty: shared result storage for background SSH connect -> snapshot result
     ssh_connect_res: std::sync::Arc<
-        std::sync::Mutex<Option<Result<(SourceId, Vec<Node>, Vec<InterfaceStats>, SourceSpec), String>>>,
+        std::sync::Mutex<
+            Option<Result<(SourceId, Vec<Node>, Vec<InterfaceStats>, SourceSpec), String>>,
+        >,
     >,
     // Quick & dirty: flag indicating SSH connect in progress
     ssh_connect_pending: bool,
 
     merge_config: MergeConfig,
-}
-
-impl Drop for App {
-    fn drop(&mut self) {
-        self.stop_autopoll();
-    }
 }
 
 impl App {
@@ -191,7 +186,9 @@ impl App {
             "password".to_string(),
             2221,
         );
-        let topo = IsIsTopology::new_from_ssh_client(ssh_client).await.unwrap();
+        let topo = IsIsBfsTopology::new_from_ssh_client(ssh_client)
+            .await
+            .unwrap();
         let topo: Box<dyn SnapshotSource> =
             //Box::new(OspfSnmpTopology::from_snmp_client(snmp_client));
             Box::new(topo);
@@ -201,6 +198,8 @@ impl App {
 
         let mut layout_state = LayoutState::default();
         layout_state.base.k_scale = 0.2;
+
+        let autopoller = AutoPoller::new(None, runtime.clone());
 
         let app = Self {
             topo,
@@ -221,14 +220,9 @@ impl App {
 
             edit_tool: EditTool::None,
             draw_first: None,
-            
-            source_specs: HashMap::new(),
-            autopoll_enabled: false,
-            autopoll_interval: Duration::from_secs(30),
-            autopoll_interval_tx: None,
-            poll_rx: None,
-            poll_tx: None,
-            autopoll_handles: Vec::new(),
+
+            autopoller,
+            autopoll_enabled_gui: false,
 
             snmp_host: "127.0.0.1".to_string(),
             snmp_port: 1161,
@@ -249,99 +243,6 @@ impl App {
         };
 
         Ok(app)
-    }
-    
-    fn start_autopoll(&mut self) {
-        
-        if !self.autopoll_handles.is_empty() {
-            self.stop_autopoll();
-        }
-        
-        // Create channels
-        let (poll_tx, poll_rx) = std::sync::mpsc::channel();
-        self.poll_tx = Some(poll_tx.clone());
-        self.poll_rx = Some(poll_rx);
-        
-        let (interval_tx, interval_rx) = watch::channel(
-            if self.autopoll_interval.is_zero() {
-                Duration::from_secs(1)
-            } else {
-                self.autopoll_interval
-            }
-        );
-        
-        self.autopoll_interval_tx = Some(interval_tx.clone());
-        
-        for (src_id, spec) in self.source_specs.iter() {
-            let poll_tx = poll_tx.clone();
-            let src_id = src_id.clone();
-            let spec = spec.clone();
-            let mut interval_rx = interval_rx.clone();
-            let handle = self.runtime.spawn(async move {
-                let mut hasher = DefaultHasher::new();
-                src_id.hash(&mut hasher);
-                let jitter = Duration::from_millis(hasher.finish() % 250);
-                tokio::time::sleep(jitter).await;
-                
-                let mut source = match spec.build_topology().await {
-                    Ok(topology) => {
-                        Some(topology)
-                    }
-                    Err(e) => {
-                        let _ = poll_tx.send(Err(format!("Init failed: {}", e)));
-                        None
-                    }
-                };
-                let mut current_interval = *interval_rx.borrow();
-                let mut ticker = tokio::time::interval(current_interval);
-                loop {
-                    tokio::select! {
-                        _ = ticker.tick() => {
-                            if source.is_none() {
-                                match spec.build_topology().await {
-                                    Ok(s) => source = Some(s),
-                                    Err(e) => {
-                                        let _ = poll_tx.send(Err(format!("reinit failed: {}", e)));
-                                        continue;
-                                    }
-                                }
-                            }
-                            match source.as_mut().unwrap().fetch_snapshot().await {
-                                Ok((id, nodes, stats)) => {
-                                    let _ = poll_tx.send(Ok((id, nodes, stats)));
-                                }
-                                Err(e) => {
-                                    source = None; // force rebuild next tick
-                                    let _ = poll_tx.send(Err(format!("poll failed: {}", e)));
-                                }
-                            }
-                        }
-                        // Interval change notification
-                        changed = interval_rx.changed() => {
-                            if changed.is_err() {
-                                // sender dropped; exit task
-                                break;
-                            }
-                            let new_interval = *interval_rx.borrow();
-                            if new_interval != current_interval {
-                                current_interval = new_interval;
-                                ticker = tokio::time::interval(current_interval);
-                            }
-                        }
-                    }
-                }
-            });
-            self.autopoll_handles.push(handle);
-        }
-    }
-    
-    fn stop_autopoll(&mut self) {
-        for h in self.autopoll_handles.drain(..) {
-            h.abort();
-        }
-        self.poll_tx = None;
-        self.poll_rx = None;
-        self.autopoll_interval_tx = None;
     }
 
     fn read_data(&mut self) {
@@ -365,12 +266,13 @@ impl App {
                 .graph
                 .edges_directed(src_node_idx, petgraph::Direction::Outgoing)
                 .collect();
-            
+
             if edges.len() < 2 {
                 continue;
             }
-            
-            let mut prefix_to_dst_uuid: HashMap<IpNetwork, Uuid> = edges.iter()
+
+            let mut prefix_to_dst_uuid: HashMap<IpNetwork, Uuid> = edges
+                .iter()
                 .filter_map(|edge| {
                     let dst_uuid = edge.weight().payload().destination_id;
                     let dst_node_idx = self
@@ -416,10 +318,12 @@ impl App {
 
                 let weight = stats.get_weight() as f32 / total_weight;
                 let dst_uuid = prefix_to_dst_uuid.remove(&prefix).unwrap();
+                /*
                 println!(
                     "Setting weight for {} -> {} to {}",
                     src_uuid, &prefix, weight
                 );
+                */
                 edge_shape::insert_edge_weight(src_uuid, dst_uuid, weight);
             }
         }
@@ -590,7 +494,7 @@ impl App {
         if !self.path_mode || ui.button("Clear path").clicked() {
             self.path_start = None;
             self.path_end = None;
-            clear_path_highlight();
+            clear_path_highlight(ui.ctx());
         }
 
         if ui.button("Use Selected as start").clicked() {
@@ -626,7 +530,7 @@ impl App {
                     Vec::new()
                 };
 
-                node_shape::set_path_highlight(path_uuids.into_iter());
+                node_shape::set_path_highlight(ui.ctx(), path_uuids.into_iter());
             }
         }
 
@@ -725,23 +629,28 @@ impl App {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Interval (s)");
-                    let mut seconds = self.autopoll_interval.as_secs();
-                    if ui.add_enabled(self.autopoll_enabled, egui::DragValue::new(&mut seconds).range(1..=3600)).changed() {
+                    let mut seconds = self.autopoller.poll_interval().as_secs();
+                    if ui
+                        .add_enabled(
+                            self.autopoller.enabled(),
+                            egui::DragValue::new(&mut seconds).range(1..=3600),
+                        )
+                        .changed()
+                    {
                         let new_duration = Duration::from_secs(seconds.max(1));
-                        self.autopoll_interval = new_duration;
-                        
-                        if let Some(tx) = &self.autopoll_interval_tx {
-                            let _ = tx.send(new_duration);
-                        }
+                        self.autopoller.set_poll_interval(new_duration);
                     }
                 });
-                
-                let was_enabled = self.autopoll_enabled;
-                ui.checkbox(&mut self.autopoll_enabled, "Enable periodic polling for known sources");
-                if self.autopoll_enabled && !was_enabled {
-                    self.start_autopoll();
-                } else if !self.autopoll_enabled && was_enabled {
-                    self.stop_autopoll();
+
+                let was_enabled = self.autopoll_enabled_gui;
+                ui.checkbox(
+                    &mut self.autopoll_enabled_gui,
+                    "Enable periodic polling for known sources",
+                );
+                if self.autopoll_enabled_gui && !was_enabled {
+                    self.autopoller.start();
+                } else if !self.autopoll_enabled_gui && was_enabled {
+                    self.autopoller.stop();
                 }
             });
     }
@@ -775,14 +684,14 @@ impl App {
                 match res {
                     Ok((src_id, nodes, stats, source_spec)) => {
                         println!("[app] SSH snapshot received in UI thread (via Arc<Mutex>)");
-                        
+
                         if self.ssh_clear_sources_on_switch {
                             self.store = TopologyStore::default();
-                            self.source_specs.clear();
+                            self.autopoller.clear_source_specs();
                         }
-                        
-                        self.source_specs.insert(src_id.clone(), source_spec);
-                        
+
+                        self.autopoller.add_source(src_id.clone(), source_spec);
+
                         let now = std::time::SystemTime::now();
                         self.store.replace_partition(&src_id, nodes, stats, now);
 
@@ -810,11 +719,11 @@ impl App {
                         println!("[app] SNMP snapshot received in UI thread (via Arc<Mutex>)");
                         if self.clear_sources_on_switch {
                             self.store = TopologyStore::default();
-                            self.source_specs.clear();
+                            self.autopoller.clear_source_specs();
                         }
-                        
-                        self.source_specs.insert(src_id.clone(), spec);
-                        
+
+                        self.autopoller.add_source(src_id.clone(), spec);
+
                         let now = std::time::SystemTime::now();
                         self.store.replace_partition(&src_id, nodes, stats, now);
 
@@ -833,15 +742,25 @@ impl App {
                 ctx.request_repaint();
             }
         }
-        
+
         {
             let mut reload_needed = false;
-            if let Some(rx) = &self.poll_rx {
+            if let Some(rx) = self.autopoller.poll_rx_mut() {
                 while let Ok(msg) = rx.try_recv() {
                     match msg {
-                        Ok((src_id, nodes, stats)) => {
+                        Ok(PollMessage {
+                            source_id,
+                            nodes,
+                            if_stats,
+                            ..
+                        }) => {
                             let now = std::time::SystemTime::now();
-                            self.store.replace_partition(&src_id, nodes, stats, now);
+                            eprintln!(
+                                "[AUTOPOLL] Received poll msg, updating partition {}",
+                                source_id.as_string()
+                            );
+                            self.store
+                                .replace_partition(&source_id, nodes, if_stats, now);
                             reload_needed = true;
                         }
                         Err(e) => {
@@ -857,7 +776,7 @@ impl App {
         }
 
         let render_side_panel = |ui: &mut Ui| {
-            let mut highlight_enabled = partition_highlight_enabled();
+            let mut highlight_enabled = partition_highlight_enabled(ui.ctx());
             if ui
                 .checkbox(&mut highlight_enabled, "Partition highlight")
                 .on_hover_text("Toggle partition-wide highlight on hover")
@@ -867,7 +786,7 @@ impl App {
                     "[app] Partition highlight changed to: {}",
                     highlight_enabled
                 );
-                set_partition_highlight_enabled(highlight_enabled);
+                set_partition_highlight_enabled(ui.ctx(), highlight_enabled);
             }
             let mut edge_labels_enabled = edge_shape::edge_labels_enabled();
             if ui
@@ -954,14 +873,14 @@ impl App {
                                 let client =
                                     SshClient::new_with_password(username.clone(), host.clone(), password.clone(), port);
                                 println!("[bg-ssh async] created SSH client, creating topology");
-                                match IsIsTopology::new_from_ssh_client(client).await {
+                                match IsIsBfsTopology::new_from_ssh_client(client).await {
                                     Ok(mut topo) => {
                                         println!("[bg-ssh async] topology created, fetching snapshot");
                                         match topo.fetch_snapshot().await {
                                             Ok((src_id, nodes, stats)) => {
                                                 println!("[bg-ssh async] snapshot fetch succeeded, src_id={:?}, nodes_count={}", src_id, nodes.len());
                                                 // Register source spec
-                                                
+
                                                 let source_spec = SourceSpec::new_ssh(
                                                     host.clone(),
                                                     port,
@@ -969,7 +888,7 @@ impl App {
                                                     password.clone(),
                                                     crate::gui::autopoll::ProtocolKind::Isis
                                                 );
-                                                
+
                                                 Ok((src_id, nodes, stats, source_spec))
                                             }
                                             Err(e) => {
@@ -1084,14 +1003,14 @@ impl App {
                                     None,
                                 );
                                 println!("[bg-snmp async] created SNMP client, building topology");
-                                let mut topo = OspfSnmpTopology::from_snmp_client(client);
+                                let mut topo = OspfBfsSnmpTopology::from_snmp_client(client).await.unwrap();
                                 println!("[bg-snmp async] fetching snapshot from SNMP topology");
                                 match topo.fetch_snapshot().await {
                                     Ok((src_id, nodes, stats)) => {
                                         println!("[bg-snmp async] snapshot fetch succeeded src_id={:?}, nodes_count={}", src_id, nodes.len());
-                                        
+
                                         let spec = SourceSpec::new_snmp(addr, community, snmp2::Version::V2C, None, crate::gui::autopoll::ProtocolKind::Ospf);
-                                        
+
                                         Ok((src_id, nodes, stats, spec))
                                     }
                                     Err(e) => {
@@ -1117,9 +1036,9 @@ impl App {
             self.render_sources_section(ui);
 
             ui.separator();
-            
+
             self.render_autopoll_controls(ui);
-            
+
             ui.separator();
 
             // Theme selector
@@ -1211,7 +1130,7 @@ impl App {
                     println!("{}", node.id);
                 }
             }
-            
+
             #[cfg(debug_assertions)]
             {
                 ui.collapsing("egui debug", |ui| {
@@ -1229,8 +1148,8 @@ impl App {
             egui_graphs::set_layout_state(ui, self.layout_state.clone(), None);
 
             // Reset area highlight and clear collector before drawing graph so shapes() will populate them during widget draw.
-            clear_area_highlight();
-            clear_label_overlays();
+            clear_area_highlight(ctx);
+            clear_label_overlays(ctx);
 
             let widget = &mut egui_graphs::GraphView::<
                 Node,
@@ -1354,7 +1273,7 @@ impl App {
             }
 
             // Take the collected overlay labels and paint them on top of the graph widget.
-            let labels: Vec<LabelOverlay> = take_label_overlays();
+            let labels: Vec<LabelOverlay> = take_label_overlays(ctx);
             if let Some(sel_idx) = self.selected_node {
                 // Ensure the node is still selected in the underlying graph; if not, drop selection.
                 let still_selected =
@@ -1428,7 +1347,7 @@ impl App {
             self.ssh_password.clone(),
             self.ssh_port,
         );
-        let topo = match IsIsTopology::new_from_ssh_client(client).await {
+        let topo = match IsIsBfsTopology::new_from_ssh_client(client).await {
             Ok(topo) => topo,
             Err(err) => {
                 eprintln!("Failed to create IsIsTopology: {:?}", err);
