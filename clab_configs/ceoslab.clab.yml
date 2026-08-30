@@ -1,0 +1,199 @@
+name: cEOS-Lab
+
+mgmt:
+  mtu: 1500
+  network: custom_mgmt
+  ipv4-subnet: 1.0.0.0/8
+
+topology:
+  groups:
+    routers:
+      kind: arista_ceos
+      image: ceos:4.36.1F
+      cpu: 2
+
+  # Management address space is 1.0.0.0/8
+  # 1.{AS number}.{Area number (0 for core)}.{Router number}
+  nodes:
+    netns:
+      kind: linux
+      image: alpine:latest
+      cmd: sleep infinity
+      exec:
+        - ip link add name br0 type bridge
+        - ip link set dev br0 up
+        - ip link add name br1 type bridge
+        - ip link set dev br1 up
+        # Attach Area 1 interfaces to br0
+        - ip link set eth1 master br0
+        - ip link set eth2 master br0
+        - ip link set eth3 master br0
+        - ip link set eth1 up
+        - ip link set eth2 up
+        - ip link set eth3 up
+        # Attach AS2 interfaces to br1
+        - ip link set eth4 master br1
+        - ip link set eth5 master br1
+        - ip link set eth6 master br1
+        - ip link set eth4 up
+        - ip link set eth5 up
+        - ip link set eth6 up
+    # Core
+    rca1:
+      group: routers
+      mgmt-ipv4: 1.1.0.1
+      startup-config: startup_configs/as_1/area_0/rca1.conf
+    rca2:
+      group: routers
+      mgmt-ipv4: 1.1.0.2
+      startup-config: startup_configs/as_1/area_0/rca2.conf
+    rca3:
+      group: routers
+      mgmt-ipv4: 1.1.0.3
+      startup-config: startup_configs/as_1/area_0/rca3.conf
+    rca4:
+      group: routers
+      mgmt-ipv4: 1.1.0.4
+      startup-config: startup_configs/as_1/area_0/rca4.conf
+    rca5:
+      group: routers
+      mgmt-ipv4: 1.1.0.5
+      startup-config: startup_configs/as_1/area_0/rca5.conf
+
+    # Distribution
+    rda11:
+      group: routers
+      mgmt-ipv4: 1.1.1.1
+      startup-config: startup_configs/as_1/area_1/rda11.conf
+    rda12:
+      group: routers
+      mgmt-ipv4: 1.1.1.2
+      startup-config: startup_configs/as_1/area_1/rda12.conf
+    rda13:
+      group: routers
+      mgmt-ipv4: 1.1.1.3
+      startup-config: startup_configs/as_1/area_1/rda13.conf
+    rda14:
+      group: routers
+      mgmt-ipv4: 1.1.1.4
+      startup-config: startup_configs/as_1/area_1/rda14.conf
+
+    #rda21:
+    #  group: routers
+    #  mgmt-ipv4: 1.1.2.1
+    #rda22:
+    #  group: routers
+    #  mgmt-ipv4: 1.1.2.2
+    #rda23:
+    #  group: routers
+    #  mgmt-ipv4: 1.1.2.3
+    #rda24:
+    #  group: routers
+    #  mgmt-ipv4: 1.1.2.4
+
+    rda31:
+      group: routers
+      mgmt-ipv4: 1.1.3.1
+      startup-config: startup_configs/as_1/area_3/rda31.conf
+    rda32:
+      group: routers
+      mgmt-ipv4: 1.1.3.2
+      startup-config: startup_configs/as_1/area_3/rda32.conf
+
+    rcb1:
+      group: routers
+      mgmt-ipv4: 1.2.0.1
+      startup-config: startup_configs/as_2/area_0/rcb1.conf
+    rcb2:
+      group: routers
+      mgmt-ipv4: 1.2.0.2
+      startup-config: startup_configs/as_2/area_0/rcb2.conf
+    rcb3:
+      group: routers
+      mgmt-ipv4: 1.2.0.3
+      startup-config: startup_configs/as_2/area_0/rcb3.conf
+
+    rdb11:
+      group: routers
+      mgmt-ipv4: 1.2.1.1
+      startup-config: startup_configs/as_2/area_1/rdb11.conf
+    rdb12:
+      group: routers
+      mgmt-ipv4: 1.2.1.2
+      startup-config: startup_configs/as_2/area_1/rdb12.conf
+
+  links:
+    # AS 1 Core
+    - endpoints: ["rca1:eth1", "rca2:eth1"]
+      ipv4: [10.0.12.1/24, 10.0.12.2/24]
+    - endpoints: ["rca2:eth2", "rca3:eth1"]
+      ipv4: [10.0.23.2/24, 10.0.23.3/24]
+    - endpoints: ["rca3:eth2", "rca4:eth1"]
+      ipv4: [10.0.34.3/24, 10.0.34.4/24]
+    - endpoints: ["rca4:eth2", "rca1:eth2"]
+      ipv4: [10.0.14.4/24, 10.0.14.1/24]
+    - endpoints: ["rca4:eth3", "rca2:eth3"]
+      ipv4: [10.0.24.4/24, 10.0.24.2/24]
+    - endpoints: ["rca1:eth3", "rca3:eth3"]
+      ipv4: [10.0.13.1/24, 10.0.13.3/24]
+    - endpoints: ["rca5:eth4", "rca3:eth5"]
+      ipv4: [10.0.35.5/24, 10.0.35.3/24]
+    - endpoints: ["rca5:eth5", "rca4:eth5"]
+      ipv4: [10.0.45.5/24, 10.0.45.4/24]
+
+    # Distribution AS 1
+    # Area 1
+    - endpoints: ["rca2:eth4", "rda11:eth1"]
+      ipv4: [10.101.2.2/24, 10.101.2.11/24]
+    - endpoints: ["rca3:eth4", "rda11:eth2"]
+      ipv4: [10.101.3.3/24, 10.101.3.11/24]
+    - endpoints: ["rda11:eth3", "netns:eth1"]
+      ipv4: [10.1.123.1/24, ""]
+    - endpoints: ["rda12:eth1", "netns:eth2"]
+      ipv4: [10.1.123.2/24, ""]
+    - endpoints: ["rda13:eth1", "netns:eth3"]
+      ipv4: [10.1.123.3/24, ""]
+    - endpoints: ["rda13:eth2", "rda14:eth1"]
+      ipv4: [10.1.34.3/24, 10.1.34.4/24]
+    # Area 2
+    #- endpoints: ["rca1:eth4", "rda21:eth1"]
+    #  ipv4: [10.102.1.1/24, 10.102.1.21/24]
+    #- endpoints: ["rca4:eth4", "rda21:eth2"]
+    #  ipv4: [10.102.4.4/24, 10.102.4.21/24]
+    #- endpoints: ["rda23:eth1", "rda21:eth3"]
+    #  ipv4: [10.2.13.3/24, 10.2.13.1/24]
+    #- endpoints: ["rda22:eth1", "rda21:eth4"]
+    #  ipv4: [10.2.12.2/24, 10.2.12.1/24]
+    #- endpoints: ["rda23:eth2", "rda24:eth1"]
+    #  ipv4: [10.2.34.3/24, 10.2.34.4/24]
+    #- endpoints: ["rda22:eth2", "rda24:eth2"]
+    #  ipv4: [10.2.24.2/24, 10.2.24.4/24]
+    # Disjoint Core (RCA5)
+    #- endpoints: ["rda24:eth3", "rca5:eth1"]
+    #  ipv4: [10.102.5.24/24, 10.102.5.5/24]
+    - endpoints: ["rda14:eth2", "rca5:eth2"]
+      ipv4: [10.101.5.14/24, 10.101.5.5/24]
+    # Area 3
+    - endpoints: ["rca5:eth3", "rda31:eth1"]
+      ipv4: [10.103.5.5/24, 10.103.5.31/24]
+    - endpoints: ["rda31:eth2", "rda32:eth1"]
+      ipv4: [10.3.12.1/24, 10.3.12.2/24]
+
+    # AS 1 <-> AS 2
+    - endpoints: ["rcb1:eth1", "rca1:eth5"]
+      ipv4: [120.0.1.1/31, 120.0.1.0/31]
+    - endpoints: ["rcb2:eth1", "rca2:eth5"]
+      ipv4: [120.0.2.1/31, 120.0.2.0/31]
+    # AS 2 (IS-IS)
+    - endpoints: ["rcb1:eth2", "rcb2:eth2"]
+      ipv4: [20.0.12.1/24, 20.0.12.2/24]
+    - endpoints: ["rcb1:eth3", "rcb3:eth1"]
+      ipv4: [20.0.13.1/24, 20.0.13.3/24]
+    - endpoints: ["rcb2:eth3", "rcb3:eth2"]
+      ipv4: [20.0.23.2/24, 20.0.23.3/24]
+    - endpoints: ["rdb11:eth1", "netns:eth4"]
+      ipv4: [20.101.12.11/24, ""]
+    - endpoints: ["rdb12:eth1", "netns:eth5"]
+      ipv4: [20.101.12.12/24, ""]
+    - endpoints: ["rcb3:eth3", "netns:eth6"]
+      ipv4: [20.101.12.3/24, ""]

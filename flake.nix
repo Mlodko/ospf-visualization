@@ -2,7 +2,7 @@
   description = "Rust + egui dev shell with FRR and Docker";
 
   inputs = {
-    nixpkgs.url      = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url      = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url  = "github:numtide/flake-utils";
     fenix.url        = "github:nix-community/fenix";
     rust-overlay.url = "github:oxalica/rust-overlay";
@@ -24,14 +24,15 @@
           wayland
           libxkbcommon
           libGL
-          xorg.libX11
-          xorg.libxcb
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libXrandr
-          xorg.libXxf86vm
-          xorg.libXinerama
-          xorg.libXext
+          libxkbcommon
+          libx11
+          libxcb
+          libxcursor
+          libxi
+          libxrandr
+          libxxf86vm
+          libxinerama
+          libxext
           vulkan-loader
           mesa
           vulkan-tools
@@ -48,8 +49,6 @@
             rustfmt
             cargo
             cargo-expand
-            docker
-            docker-compose
             nixd
             act
             openssl.dev
@@ -57,21 +56,23 @@
             direnv
             net-snmp
             libxkbcommon
-            xorg.libX11
-            xorg.libxcb
-            xorg.libXcursor
-            xorg.libXi
-            xorg.libXrandr
-            xorg.libXxf86vm
-            xorg.libXinerama
-            xorg.libXext
+            libx11
+            libxcb
+            libxcursor
+            libxi
+            libxrandr
+            libxxf86vm
+            libxinerama
+            libxext
             wayland
             wayland-protocols
             vulkan-loader
             libGL
-            texliveMedium
             perf
-            
+            containerlab
+            python314            
+            gnmic
+
             # libwayland  # Uncomment if you need the static lib
             # nushell     # Uncomment to use nushell as login shell
             # u-config    # Uncomment if you want this config tool
@@ -82,24 +83,6 @@
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
           LD_LIBRARY_PATH = "${pkgs.openssl.out}/lib:${libPath}";
 
-          shellHook = ''
-            echo "🚀 Starting FRR container..."
-            docker compose -f ./router_configs/config_2/docker-compose.yml up -d --build
-            echo "✅ FRR running at 172.20.0.10 (SNMP on localhost:161)"
-            echo "🔧 Test: snmpwalk -v2c -c public localhost:161 1.3.6.1.2.1.1"
-            trap 'docker compose -f ./router_configs/config_2/docker-compose.yml down' EXIT
-
-            echo "Using Rust toolchain: $(rustc --version)"
-            export CARGO_HOME="$HOME/.cargo"
-            export RUSTUP_HOME="$HOME/.rustup"
-            export LD_LIBRARY_PATH="${libPath}:${pkgs.openssl.out}/lib:$LD_LIBRARY_PATH"
-            mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
-            
-            export WINIT_UNIX_BACKEND=x11
-
-            # Uncomment to launch nushell as login shell
-            # exec nu --login
-          '';
         };
       }
     );
