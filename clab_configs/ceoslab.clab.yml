@@ -108,24 +108,24 @@ topology:
     rcb1:
       group: routers
       mgmt-ipv4: 1.2.0.1
-      #startup-config: startup_configs/as_2/area_0/rcb1.cli
+      startup-config: startup_configs/as_2/area_0/rcb1.cli
     rcb2:
       group: routers
       mgmt-ipv4: 1.2.0.2
-      #startup-config: startup_configs/as_2/area_0/rcb2.cli
+      startup-config: startup_configs/as_2/area_0/rcb2.cli
     rcb3:
       group: routers
       mgmt-ipv4: 1.2.0.3
-      #startup-config: startup_configs/as_2/area_0/rcb3.cli
+      startup-config: startup_configs/as_2/area_0/rcb3.cli
 
     rdb11:
       group: routers
       mgmt-ipv4: 1.2.1.1
-      #startup-config: startup_configs/as_2/area_1/rdb11.cli
+      startup-config: startup_configs/as_2/area_1/rdb11.cli
     rdb12:
       group: routers
       mgmt-ipv4: 1.2.1.2
-      #startup-config: startup_configs/as_2/area_1/rdb12.cli
+      startup-config: startup_configs/as_2/area_1/rdb12.cli
 
   links:
     # AS 1 Core

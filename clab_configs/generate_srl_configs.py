@@ -380,6 +380,126 @@ configs = {
             },
         },
     },
+
+    "rcb1": {
+        "interfaces": {
+            "ethernet-1/1": {"ip_address": "120.0.1.1/31"},
+            "ethernet-1/2": {"ip_address": "20.0.12.1/24"},
+            "ethernet-1/3": {"ip_address": "20.0.13.1/24"},
+            "lo0": {"ip_address": "100.2.0.1/32"},
+        },
+        "protocols": {
+            "isis": {
+                "level": "2", # 1, 2, or 1-2
+                "net": "49.0000.0000.0000.0001.00",
+                "interfaces": {
+                    "ethernet-1/2.0": {
+                        "level": "2"
+                    },
+                    "ethernet-1/3.0": {
+                        "level": "2"
+                    },
+                    "lo0.0": {
+                        "level": "2"
+                    },
+                }
+            }
+        }
+    },
+    "rcb2": {
+        "interfaces": {
+            "ethernet-1/1": {"ip_address": "120.0.2.1/31"},
+            "ethernet-1/2": {"ip_address": "20.0.12.2/24"},
+            "ethernet-1/3": {"ip_address": "20.0.23.2/24"},
+            "lo0": {"ip_address": "100.2.0.2/32"},
+        },
+        "protocols": {
+            "isis": {
+                "level": "2", # 1, 2, or 1-2
+                "net": "49.0000.0000.0000.0002.00",
+                "interfaces": {
+                    "ethernet-1/2.0" : {
+                        "level": "2"
+                    },
+                    "ethernet-1/3.0": {
+                        "level": "2"
+                    },
+                    "lo0.0": {
+                        "level": "2"
+                    },
+                }
+            }
+        }
+    },
+    "rcb3": {
+        "interfaces": {
+            "ethernet-1/1": {"ip_address": "20.0.13.3/24"},
+            "ethernet-1/2": {"ip_address": "20.0.23.3/24"},
+            "ethernet-1/3": {"ip_address": "20.101.12.3/24"},
+            "lo0": {"ip_address": "100.2.0.3/32"},
+        },
+        "protocols": {
+            "isis": {
+                "level": "1-2", # 1, 2, or 1-2
+                "net": "49.0000.0000.0000.0003.00",
+                "interfaces": {
+                    "ethernet-1/1.0": {
+                        "level": "2"
+                    },
+                    "ethernet-1/2.0": {
+                        "level": "2"
+                    },
+                    "ethernet-1/3.0": {
+                        "level": "1"
+                    },
+                    "lo0.0": {
+                        "level": "2"
+                    },
+                }
+            }
+        }
+    },
+
+    "rdb11": {
+        "interfaces": {
+            "ethernet-1/1": {"ip_address": "20.101.12.11/24"},
+            "lo0": {"ip_address": "100.2.1.1/32"},
+        },
+        "protocols": {
+            "isis": {
+                "level": "1-2",
+                "net": "49.0001.0000.0001.0001.00",
+                "interfaces": {
+                    "ethernet-1/1.0": {
+                        "level": "1"
+                    },
+                    "lo0.0": {
+                        "level": "1"
+                    },
+                }
+            },
+        }
+    },
+    "rdb12": {
+        "interfaces": {
+            "ethernet-1/1": {"ip_address": "20.101.12.12/24"},
+            "lo0": {"ip_address": "100.2.1.2/32"},
+        },
+        "protocols": {
+            "isis": {
+                "level": "1-2",
+                "net": "49.0001.0000.0001.0002.00",
+                "interfaces": {
+                    "ethernet-1/1.0": {
+                        "level": "1"
+                    },
+                    "lo0.0": {
+                        "level": "1"
+                    },
+                }
+            },
+        }
+    }
 }
 
 
@@ -397,6 +517,8 @@ def parse_router_config(router_name: str, router_config: dict[str, Any]) -> list
                     match protocol_name:
                         case "ospf":
                             configure_ospf(commands, protocol_config)
+                        case "isis":
+                            configure_isis(commands, protocol_config)
                         case _:
                             raise ValueError(f"Unsupported protocol: {protocol_name}")
             case _:
@@ -449,6 +571,27 @@ def configure_ospf(commands: list[str], ospf_config: dict[str, Any]) -> None:
                 f"set / network-instance default protocols ospf instance 1 area {area_id} interface {interface_name}"
             )
 
+def configure_isis(commands: list[str], isis_config: dict[str, Any]) -> None:
+    commands.append("set / network-instance default protocols isis instance 1 admin-state enable")
+    commands.append("set / network-instance default protocols isis instance 1 ipv4-unicast admin-state enable")
+    
+    match level := isis_config.get("level"):
+        case "1" | "2":
+            commands.append(f"set / network-instance default protocols isis instance 1 level-capability L{level}")
+        case "1-2":
+            commands.append(f"set / network-instance default protocols isis instance 1 level-capability L1L2")
+        case None:
+            raise ValueError("Missing 'level' in ISIS configuration")
+        case _:
+            raise ValueError(f"Unsupported ISIS level: {isis_config['level']}")
+
+    commands.append(f"set / network-instance default protocols isis instance 1 net [{isis_config['net']}]")
+
+    for interface_name, interface_config in isis_config["interfaces"].items():
+        if_level = interface_config["level"]
+        commands.append(f"set / network-instance default protocols isis instance 1 interface {interface_name} admin-state enable")
+        commands.append(f"set / network-instance default protocols isis instance 1 interface {interface_name} level {if_level}")
+        
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "startup_configs"
@@ -471,6 +614,13 @@ CONFIG_PATHS = {
 
     "rda31": "as_1/area_3",
     "rda32": "as_1/area_3",
+
+    "rcb1": "as_2/area_0",
+    "rcb2": "as_2/area_0",
+    "rcb3": "as_2/area_0",
+
+    "rdb11": "as_2/area_1",
+    "rdb12": "as_2/area_1",
 }
 
 
