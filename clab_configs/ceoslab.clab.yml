@@ -43,85 +43,89 @@ topology:
     rca1:
       group: routers
       mgmt-ipv4: 1.1.0.1
-      #startup-config: startup_configs/as_1/area_0/rca1.conf
+      startup-config: startup_configs/as_1/area_0/rca1.cli
     rca2:
       group: routers
       mgmt-ipv4: 1.1.0.2
-      #startup-config: startup_configs/as_1/area_0/rca2.conf
+      startup-config: startup_configs/as_1/area_0/rca2.cli
     rca3:
       group: routers
       mgmt-ipv4: 1.1.0.3
-      #startup-config: startup_configs/as_1/area_0/rca3.conf
+      startup-config: startup_configs/as_1/area_0/rca3.cli
     rca4:
       group: routers
       mgmt-ipv4: 1.1.0.4
-      #startup-config: startup_configs/as_1/area_0/rca4.conf
+      startup-config: startup_configs/as_1/area_0/rca4.cli
     rca5:
       group: routers
       mgmt-ipv4: 1.1.0.5
-      #startup-config: startup_configs/as_1/area_0/rca5.conf
+      startup-config: startup_configs/as_1/area_0/rca5.cli
 
     # Distribution
     rda11:
       group: routers
       mgmt-ipv4: 1.1.1.1
-      #startup-config: startup_configs/as_1/area_1/rda11.conf
+      startup-config: startup_configs/as_1/area_1/rda11.cli
     rda12:
       group: routers
       mgmt-ipv4: 1.1.1.2
-      #startup-config: startup_configs/as_1/area_1/rda12.conf
+      startup-config: startup_configs/as_1/area_1/rda12.cli
     rda13:
       group: routers
       mgmt-ipv4: 1.1.1.3
-      #startup-config: startup_configs/as_1/area_1/rda13.conf
+      startup-config: startup_configs/as_1/area_1/rda13.cli
     rda14:
       group: routers
       mgmt-ipv4: 1.1.1.4
-      #startup-config: startup_configs/as_1/area_1/rda14.conf
+      startup-config: startup_configs/as_1/area_1/rda14.cli
 
     rda21:
       group: routers
       mgmt-ipv4: 1.1.2.1
+      startup-config: startup_configs/as_1/area_2/rda21.cli
     rda22:
       group: routers
       mgmt-ipv4: 1.1.2.2
+      startup-config: startup_configs/as_1/area_2/rda22.cli
     rda23:
       group: routers
       mgmt-ipv4: 1.1.2.3
+      startup-config: startup_configs/as_1/area_2/rda23.cli
     rda24:
       group: routers
       mgmt-ipv4: 1.1.2.4
+      startup-config: startup_configs/as_1/area_2/rda24.cli
 
     rda31:
       group: routers
       mgmt-ipv4: 1.1.3.1
-      #startup-config: startup_configs/as_1/area_3/rda31.conf
+      startup-config: startup_configs/as_1/area_3/rda31.cli
     rda32:
       group: routers
       mgmt-ipv4: 1.1.3.2
-      #startup-config: startup_configs/as_1/area_3/rda32.conf
+      startup-config: startup_configs/as_1/area_3/rda32.cli
 
     rcb1:
       group: routers
       mgmt-ipv4: 1.2.0.1
-      #startup-config: startup_configs/as_2/area_0/rcb1.conf
+      #startup-config: startup_configs/as_2/area_0/rcb1.cli
     rcb2:
       group: routers
       mgmt-ipv4: 1.2.0.2
-      #startup-config: startup_configs/as_2/area_0/rcb2.conf
+      #startup-config: startup_configs/as_2/area_0/rcb2.cli
     rcb3:
       group: routers
       mgmt-ipv4: 1.2.0.3
-      #startup-config: startup_configs/as_2/area_0/rcb3.conf
+      #startup-config: startup_configs/as_2/area_0/rcb3.cli
 
     rdb11:
       group: routers
       mgmt-ipv4: 1.2.1.1
-      #startup-config: startup_configs/as_2/area_1/rdb11.conf
+      #startup-config: startup_configs/as_2/area_1/rdb11.cli
     rdb12:
       group: routers
       mgmt-ipv4: 1.2.1.2
-      #startup-config: startup_configs/as_2/area_1/rdb12.conf
+      #startup-config: startup_configs/as_2/area_1/rdb12.cli
 
   links:
     # AS 1 Core
@@ -137,10 +141,10 @@ topology:
       ipv4: [10.0.24.4/24, 10.0.24.2/24]
     - endpoints: ["rca1:ethernet-1/3", "rca3:ethernet-1/3"]
       ipv4: [10.0.13.1/24, 10.0.13.3/24]
-    #- endpoints: ["rca5:ethernet-1/4", "rca3:ethernet-1/5"]
-    #  ipv4: [10.0.35.5/24, 10.0.35.3/24]
-    #- endpoints: ["rca5:ethernet-1/5", "rca4:ethernet-1/5"]
-    #  ipv4: [10.0.45.5/24, 10.0.45.4/24]
+    - endpoints: ["rca5:ethernet-1/4", "rca3:ethernet-1/5"]
+      ipv4: [10.0.35.5/24, 10.0.35.3/24]
+    - endpoints: ["rca5:ethernet-1/5", "rca4:ethernet-1/5"]
+      ipv4: [10.0.45.5/24, 10.0.45.4/24]
 
     # Distribution AS 1
     # Area 1
