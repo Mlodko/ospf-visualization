@@ -4,7 +4,7 @@ use std::str::FromStr;
 use snmp2::Oid;
 
 use crate::{
-    data_aquisition::{
+    data_acquisition::transport::{
         core::{LinkStateValue},
         snmp::{SnmpClient, SnmpTableRow},
     },

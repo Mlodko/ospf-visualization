@@ -1,4 +1,4 @@
-use crate::{data_aquisition::snmp::SnmpClientError, parsers::ospf_parser::lsa::LsaError};
+use crate::{data_acquisition::transport::snmp::SnmpClientError, parsers::ospf_parser::lsa::LsaError};
 
 /*
 This module handles converting raw router data into semantic OSPF data structures,

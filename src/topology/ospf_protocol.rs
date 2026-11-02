@@ -1,7 +1,7 @@
 use std::{collections::HashMap, net::Ipv4Addr};
 
 use crate::{
-    data_aquisition::snmp::SnmpClient,
+    data_acquisition::transport::snmp::SnmpClient,
     network::{
         node::{
             Network as NetStruct, Node, NodeInfo, OspfPayload, PerAreaRouterFacet, ProtocolData,
@@ -311,7 +311,7 @@ pub struct OspfSnmpAcquisition {
 }
 
 impl OspfSnmpAcquisition {
-    pub fn new(client: crate::data_aquisition::snmp::SnmpClient) -> Self {
+    pub fn new(client: crate::data_acquisition::transport::snmp::SnmpClient) -> Self {
         Self {
             inner: crate::parsers::ospf_parser::snmp_source::OspfSnmpSource::new(client),
         }

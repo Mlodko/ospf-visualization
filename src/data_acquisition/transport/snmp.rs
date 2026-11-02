@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::data_aquisition::core::LinkStateValue;
+use super::core::LinkStateValue;
 
 use super::core::RawRouterData;
 

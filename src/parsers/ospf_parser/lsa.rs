@@ -332,7 +332,7 @@ fn parse_lsa_type_4(lsa: &OspfLsdbEntry) -> Result<Router, LsaError> {
 #[cfg(test)]
 mod tests {
 
-    use crate::data_aquisition::snmp::SnmpClient;
+    use crate::data_acquisition::transport::snmp::SnmpClient;
     use crate::parsers::ospf_parser::snmp_source::OspfSnmpSource;
     use crate::parsers::ospf_parser::source::OspfDataSource;
 

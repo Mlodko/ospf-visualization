@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use egui::Link;
 use snmp2::Oid;
 
-use crate::{data_aquisition::{
+use crate::{data_acquisition::transport::{
     core::{LinkStateValue, RawRouterData},
     snmp::{SnmpClient, SnmpTableRow},
 }, network::router::{InterfaceStats, RouterId}};

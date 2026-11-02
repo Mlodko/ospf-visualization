@@ -18,7 +18,7 @@ use usvg::layout;
 use uuid::Uuid;
 
 use crate::{
-    data_aquisition::{snmp::SnmpClient, ssh::SshClient},
+    data_acquisition::transport::{snmp::SnmpClient, ssh::SshClient},
     gui::{
         actions::{
             AppActions, ConnectActions, ConnectStatus, GraphActions, SourceActions, SourceSummary,
@@ -163,7 +163,7 @@ struct App {
 impl App {
     async fn new(cc: &eframe::CreationContext<'_>, runtime: Arc<Runtime>) -> anyhow::Result<Self> {
         let _ = cc;
-        let snmp_client = crate::data_aquisition::snmp::SnmpClient::default();
+        let snmp_client = crate::data_acquisition::transport::snmp::SnmpClient::default();
         let ssh_client = SshClient::new_with_password(
             "client".to_string(),
             "localhost".to_string(),

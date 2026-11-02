@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use std::hash::Hasher;
 
-use crate::data_aquisition::ssh::SshClient;
+use crate::data_acquisition::transport::ssh::SshClient;
 use crate::gui::autopoll::{AutoPoller, PollMessage, SourceSpec};
 use crate::gui::edge_anim;
 use crate::gui::edge_shape::{self, NetworkGraphEdgeShape};
@@ -996,7 +996,7 @@ impl App {
                                 };
 
                                 println!("[bg-snmp async] creating SNMP client for addr={}", addr);
-                                let client = crate::data_aquisition::snmp::SnmpClient::new(
+                                let client = crate::data_acquisition::transport::snmp::SnmpClient::new(
                                     addr.clone(),
                                     &community,
                                     snmp2::Version::V2C,
@@ -1384,7 +1384,7 @@ impl App {
                 }
             }
         };
-        let client = crate::data_aquisition::snmp::SnmpClient::new(
+        let client = crate::data_acquisition::transport::snmp::SnmpClient::new(
             addr,
             &self.snmp_community,
             snmp2::Version::V2C,

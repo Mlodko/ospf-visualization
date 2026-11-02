@@ -1,4 +1,4 @@
-mod data_aquisition;
+mod data_acquisition;
 mod gui;
 mod network;
 mod parsers;

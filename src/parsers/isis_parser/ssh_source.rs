@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::{
-    data_aquisition::ssh::SshClient, network::router::InterfaceStats, parsers::isis_parser::{
+    data_acquisition::transport::ssh::SshClient, network::router::InterfaceStats, parsers::isis_parser::{
         bfs_protocol::JsonIsisBfsProtocol, core_lsp::NetAddress, frr_json_lsp::JsonLspdb, hostname::HostnameMap, protocol::JsonIsisProtocol
     }, topology::{
         protocol::{AcquisitionError, AcquisitionSource},
@@ -368,7 +368,7 @@ impl AcquisitionSource<JsonIsisBfsProtocol> for IsisSshSource {
 }
 
 mod tests {
-    use crate::data_aquisition::ssh::SshError;
+    use crate::data_acquisition::transport::ssh::SshError;
 
     use super::*;
     

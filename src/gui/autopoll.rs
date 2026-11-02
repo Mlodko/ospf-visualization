@@ -1,5 +1,5 @@
 use crate::{
-    data_aquisition::{snmp::SnmpClient, ssh::SshClient},
+    data_acquisition::transport::{snmp::SnmpClient, ssh::SshClient},
     gui::new_app::AppPanel,
     network::{
         node::Node,

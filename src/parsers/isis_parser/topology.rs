@@ -1,4 +1,4 @@
-use crate::{data_aquisition::ssh::SshClient, parsers::isis_parser::{bfs_protocol::JsonIsisBfsProtocol, protocol::JsonIsisProtocol, ssh_source::IsisSshSource}, topology::protocol::{AcquisitionError, Topology}};
+use crate::{data_acquisition::transport::ssh::SshClient, parsers::isis_parser::{bfs_protocol::JsonIsisBfsProtocol, protocol::JsonIsisProtocol, ssh_source::IsisSshSource}, topology::protocol::{AcquisitionError, Topology}};
 
 
 pub type IsIsTopology = Topology<JsonIsisProtocol, IsisSshSource>;
