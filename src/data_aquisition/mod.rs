@@ -7,3 +7,12 @@
 pub mod core;
 pub mod snmp;
 pub mod ssh;
+pub mod grpc {
+    pub mod gnmi_ext {
+        tonic::include_proto!("gnmi_ext");
+    }
+
+    pub mod gnmi {
+        tonic::include_proto!("gnmi");
+    }
+}

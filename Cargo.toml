@@ -2,6 +2,7 @@
 name = "ospf-visualization"
 version = "0.1.0"
 edition = "2024"
+build = "src/build.rs"
 
 [dependencies]
 eframe = "0.33.0"
@@ -32,3 +33,10 @@ egui_dock = "0.18.0"
 anyhow = "1.0.100"
 simple-easing = "1.0.1"
 nom = "8.0.0"
+tonic = "0.14.9"
+tonic-prost = "0.14.4"
+prost = "0.14.4"
+prost-types = "0.14.4"
+
+[build-dependencies]
+tonic-prost-build = "0.14.4"

@@ -11,14 +11,11 @@
   outputs = { nixpkgs, flake-utils, fenix, rust-overlay, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
+        overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ fenix.overlays.default rust-overlay.overlays.default ];
+          inherit system overlays;
         };
         lib = pkgs.lib;
-
-        stableToolchain = fenix.packages.${system}.complete.toolchain;
-        rustAnalyzer    = fenix.packages.${system}.latest.rust-analyzer;
         libPath = with pkgs; lib.makeLibraryPath [
           wayland-protocols
           wayland
@@ -43,12 +40,10 @@
           name = "rust-egui-dev-shell";
 
           buildInputs = with pkgs; lib.flatten [
-            stableToolchain
-            rustAnalyzer
-            rustfmt
-            cargo
-            cargo-expand
-            docker
+            (rust-bin.stable.latest.default.override {
+	      extensions = [ "rust-src" ];
+	    })
+	    docker
             docker-compose
             nixd
             act
@@ -69,9 +64,9 @@
             wayland-protocols
             vulkan-loader
             libGL
-            texliveMedium
             perf
-            
+            protobuf
+            protobufc
             # libwayland  # Uncomment if you need the static lib
             # nushell     # Uncomment to use nushell as login shell
             # u-config    # Uncomment if you want this config tool
@@ -82,25 +77,7 @@
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
           LD_LIBRARY_PATH = "${pkgs.openssl.out}/lib:${libPath}";
 
-          shellHook = ''
-            echo "🚀 Starting FRR container..."
-            docker compose -f ./router_configs/config_2/docker-compose.yml up -d --build
-            echo "✅ FRR running at 172.20.0.10 (SNMP on localhost:161)"
-            echo "🔧 Test: snmpwalk -v2c -c public localhost:161 1.3.6.1.2.1.1"
-            trap 'docker compose -f ./router_configs/config_2/docker-compose.yml down' EXIT
-
-            echo "Using Rust toolchain: $(rustc --version)"
-            export CARGO_HOME="$HOME/.cargo"
-            export RUSTUP_HOME="$HOME/.rustup"
-            export LD_LIBRARY_PATH="${libPath}:${pkgs.openssl.out}/lib:$LD_LIBRARY_PATH"
-            mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
-            
-            export WINIT_UNIX_BACKEND=x11
-
-            # Uncomment to launch nushell as login shell
-            # exec nu --login
-          '';
-        };
+                  };
       }
     );
 }
