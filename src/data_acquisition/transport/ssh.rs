@@ -14,6 +14,7 @@ pub struct SshClient {
     session: Option<Arc<Mutex<ssh2::Session>>>
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Error)]
 pub enum SshError {
     #[error("TCP error: {0}")]

@@ -3,6 +3,7 @@ mod gui;
 mod network;
 mod parsers;
 mod topology;
+mod adapters; // new parsers
 
 use std::sync::Arc;
 use gui::app;

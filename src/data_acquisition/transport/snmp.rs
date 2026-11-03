@@ -11,6 +11,7 @@ use std::{
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone)]
 pub enum MessageType {
     GetRequest,
