@@ -3,8 +3,10 @@ use std::sync::{Arc, Mutex};
 use egui::{FontId, RichText, TextStyle};
 
 use crate::gui::modules::dock::{
-    DockActions, DockPanel, DockPanelKind, packet::{parse::span::Span, state::{Packet, PacketInspectorState}}
+    DockActions, DockPanel, DockPanelKind, packet::{state::{Packet, PacketInspectorState}}
 };
+
+use crate::adapters::packets::span::*;
 
 pub struct BytesPacketInspector {
     state: Arc<Mutex<PacketInspectorState>>,

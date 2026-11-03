@@ -1,6 +1,6 @@
 use nom::IResult;
 
-use crate::{gui::modules::dock::packet::parse::lsa::{header::LsaHeader, payload::LsaPayload}, network::node::OspfAdvertisement};
+use crate::adapters::packets::ospf::{header::LsaHeader, payload::LsaPayload};
 
 #[derive(Debug, Clone)]
 pub struct Lsa {

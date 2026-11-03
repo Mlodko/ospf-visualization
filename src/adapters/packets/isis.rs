@@ -8,8 +8,6 @@ use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::adapters::CanonicalRoutingPacket;
-
 #[derive(Error, Debug)]
 pub enum LspError {
     #[error("Invalid system ID: {0}")]
@@ -111,12 +109,6 @@ impl Lsp {
         self.tlvs.iter()
             .filter(|t| pred(t))
             .collect()
-    }
-}
-
-impl CanonicalRoutingPacket for Lsp {
-    fn routing_protocol(&self) -> crate::adapters::RoutingProtocol {
-        crate::adapters::RoutingProtocol::IsIs
     }
 }
 

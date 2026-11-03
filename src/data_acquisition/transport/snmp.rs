@@ -389,6 +389,31 @@ impl SnmpTableRow<'_> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct PortableSnmpTableRow {
+    pub table_oid_prefix: Vec<u64>,
+    pub row_index_suffix: Vec<u64>,
+    pub columns: HashMap<Vec<u64>, LinkStateValue>,
+}
+
+impl<'a> From<SnmpTableRow<'a>> for PortableSnmpTableRow {
+    fn from(value: SnmpTableRow<'a>) -> Self {
+        Self {
+            table_oid_prefix: value.table_oid_prefix.iter()
+            .expect("Table OID prefix component(s) don't fit into u64, should never happen")
+            .collect(),
+            row_index_suffix: value.row_index_suffix.iter()
+            .expect("Table OID prefix component(s) don't fit into u64, should never happen")
+            .collect(),
+            columns: value.columns.into_iter().map(|(k, v)| (
+                k.iter().expect("Table OID prefix component(s) don't fit into u64, should never happen")
+                .collect(), 
+                v))
+            .collect(),
+        }
+    }
+}
+
 mod tests {
     // moved specific net imports into the test where they are used to silence warnings
 

@@ -1,4 +1,5 @@
 pub mod packets;
+pub mod vendors;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoutingProtocol {
@@ -7,22 +8,18 @@ pub enum RoutingProtocol {
     Bgp,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransportProtocol {
-    Snmp,
-    Ssh,
-    Grpc
+#[derive(Debug, Clone, PartialEq)]
+pub enum RoutingMessage {
+    Ospf(packets::ospf::lsa::Lsa),
+    IsIs(packets::isis::Lsp),
+    Bgp(),
 }
 
-#[async_trait::async_trait]
 pub trait VendorAdapter {
     fn vendor_name(&self) -> &'static str;
     fn routing_protocol(&self) -> RoutingProtocol;
-    fn transport_protocol(&self) -> TransportProtocol;
+    fn transport_protocol(&self) -> crate::data_acquisition::TransportProtocol;
+    fn subscribtion_paths(&self) -> Vec<String>;
 
-    async fn 
-}
-
-pub trait CanonicalRoutingPacket {
-    fn routing_protocol(&self) -> RoutingProtocol;
+    fn parse_transport_payload(&self, payload: crate::data_acquisition::TransportPayload) -> Result<Vec<RoutingMessage>, anyhow::Error>;
 }

@@ -3,7 +3,7 @@ use std::net::Ipv4Addr;
 use anyhow::anyhow;
 use egui::{CollapsingHeader, Response, WidgetText};
 
-use crate::{gui::{actions::AppActions, modules::dock::packet::{parse::{lsa::{header::LsaHeader, lsa::Lsa, payload::{AsExternalLsa, AsExternalTosMetric, LsaPayload, NetworkLsa, RouterLink, RouterLsa, SummaryLsa, SummaryTosMetric}}, span::Span}, state::{Packet, PacketInspectorState}}}, network::node::{Node, NodeInfo}, parsers::isis_parser::core_lsp::{AreaAddressesTlv, ExtendedIpReachabilityTlv, IpReachabilityTlv, IsExtendedReachabilityTlv, IsReachabilityTlv, Lsp, RouterCapabilityTlv, Tlv}};
+use crate::{adapters::packets::{ospf::{header::LsaHeader, lsa::Lsa, payload::{AsExternalLsa, AsExternalTosMetric, LsaPayload, NetworkLsa, RouterLink, RouterLsa, SummaryLsa, SummaryTosMetric}}, span::Span}, gui::{actions::AppActions, modules::dock::packet::state::{Packet, PacketInspectorState}}, network::node::{Node, NodeInfo}, parsers::isis_parser::core_lsp::{AreaAddressesTlv, ExtendedIpReachabilityTlv, IpReachabilityTlv, IsExtendedReachabilityTlv, IsReachabilityTlv, Lsp, RouterCapabilityTlv, Tlv}};
 
 pub trait SemanticUi {
     fn ui_semantic(&self, ui: &mut egui::Ui, on_span: &mut dyn FnMut(Span));

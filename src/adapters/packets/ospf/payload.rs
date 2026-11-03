@@ -5,10 +5,7 @@ use nom::{
     number::complete::{be_u8, be_u16, be_u32},
 };
 
-use crate::gui::modules::dock::packet::parse::{
-    lsa::header::{LsaType, RouterId},
-    span::{Field, Span},
-};
+use crate::adapters::packets::{ospf::header::{LsaType, RouterId}, span::{Field, Span}};
 
 #[derive(Debug, Clone)]
 pub enum LsaPayload {

@@ -3,8 +3,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::anyhow;
 
 use crate::{
-    gui::modules::dock::packet::parse::{lsa::lsa::Lsa, span::Span},
-    network::node::{Node, NodeInfo, ProtocolData}, parsers::isis_parser::core_lsp::Lsp,
+    adapters::packets::{ospf::lsa::Lsa, span::Span}, network::node::{Node, NodeInfo, ProtocolData}, parsers::isis_parser::core_lsp::Lsp,
 };
 
 #[derive(Default, Clone, Debug)]
