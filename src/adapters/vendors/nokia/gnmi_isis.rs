@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use crate::{adapters::{RoutingMessage, RoutingProtocol, VendorAdapter}, data_acquisition::{TransportPayload, TransportProtocol}};
 use anyhow::anyhow;
+use egui::Area;
+use ipnetwork::IpNetwork;
 use serde::Deserialize;
 
 pub struct NokiaGnmiIsisAdapter;
@@ -61,26 +63,72 @@ struct NokiaLsp {
     pub pdu_type: u8,
     pub remaining_lifetime: u16,
     pub sequence_number: u32,
+    pub tlvs: Vec<NokiaTlv>,
+    pub version: u8,
+    pub version2: u8
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct NokiaTlvWire {
+struct NokiaTlv {
     #[serde(rename = "type")]
     kind: String,
     area_adresses: Option<NokiaAreaAddress>,
     authentication: Option<NokiaAuthentication>,
     extended_ipv4_reachability: Option<NokiaExtV4Reachability>,
-    extended_is_reachability: Option<ExtendedIsReachability>,
+    extended_is_reachability: Option<NokiaExtendedIsReachability>,
     hostname: Option<NokiaHostname>,
-    
-
+    is_reachability: Option<NokiaIsReachability>,
+    router_capabilities: Option<NokiaRouterCapabilities>
 }
+
+/*
+
+- [x] /// TLV #1: Area Addresses — identifies the IS-IS areas this router belongs to.
+AreaAddresses(AreaAddressesTlv),
+- [x] /// TLV #2: IS Reachability — describes neighbors and link metrics.
+IsReachability(IsReachabilityTlv),
+- [x]/// TLV #22: Extended IS Reachability — describes neighbors and link metrics.
+ExtendedReachability(IsExtendedReachabilityTlv),
+- [skip] /// TLV #128: IP Reachability — IPv4 prefixes directly connected or redistributed by this router.
+IpReachability(IpReachabilityTlv),
+- [x] /// TLV #135: 
+ExtendedIpReachability(ExtendedIpReachabilityTlv),
+- [x] /// TLV #137: Hostname — the router's human-readable name.
+Hostname(String),
+- [x] /// TLV #242: Router Capability — router's capabilities (e.g., TE Router ID, flags).
+RouterCapability(RouterCapabilityTlv),
+
+*/
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct NokiaAreaAddress {
-    address: String
+    address: Vec<String>
+}
+
+impl From<NokiaAreaAddress> for crate::adapters::packets::isis::AreaAddressesTlv {
+    fn from(value: NokiaAreaAddress) -> Self {
+        use crate::adapters::packets::isis::{AreaAddress};
+        let string_to_area_address = |s: String| -> Option<AreaAddress> {
+            // Expecting area addresses to be in the format of "49.0001" or similar.
+            let normalized = s.replace(".", "").to_lowercase();
+            let bytes = hex::decode(normalized).ok()?;
+
+            if bytes.is_empty() || bytes.len() > 13 {
+                return None;
+            }
+            Some(AreaAddress { raw_address: bytes })
+        };
+
+        let addresses = value.address.into_iter()
+        .filter_map(string_to_area_address)
+        .collect::<Vec<AreaAddress>>();
+        
+        Self {
+            addresses
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,6 +144,18 @@ struct NokiaExtV4Reachability {
     prefixes: Vec<NokiaPrefix>,
 }
 
+impl From<NokiaExtV4Reachability> for crate::adapters::packets::isis::ExtendedIpReachabilityTlv {
+    fn from(value: NokiaExtV4Reachability) -> Self {
+        let neighbors = value.prefixes.into_iter()
+        .map(|prefix| prefix.into())
+        .collect();
+
+        Self {
+            neighbors
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct NokiaPrefix {
@@ -106,6 +166,17 @@ struct NokiaPrefix {
 
     #[serde(default)]
     subtlvs: Option<Vec<NokiaSubTlv>>
+}
+
+impl From<NokiaPrefix> for crate::adapters::packets::isis::ExtendedIpReachabilityNeighbor {
+    fn from(value: NokiaPrefix) -> Self {
+        let prefix: IpNetwork = value.prefix.parse().expect("Failed to parse prefix into IpNetwork");
+        Self {
+            prefix,
+            metric: value.metric,
+            up_down: value.up_down,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,16 +190,48 @@ struct NokiaSubTlv {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct ExtendedIsReachability {
-    neighbors: Vec<NokiaNeighbor>
+struct NokiaExtendedIsReachability {
+    neighbors: Vec<NokiaIsNeighbor>
+}
+
+impl From<NokiaExtendedIsReachability> for crate::adapters::packets::isis::IsExtendedReachabilityTlv {
+    fn from(value: NokiaExtendedIsReachability) -> Self {
+        todo!()
+    }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct NokiaNeighbor {
+struct NokiaIsNeighbor {
     system_id: String,
     instances: Vec<NokiaNeighborInstance>
 }
+
+impl From<NokiaIsNeighbor> for crate::adapters::packets::isis::ExtendedIsNeighbor {
+    fn from(value: NokiaIsNeighbor) -> Self {
+        todo!()
+    }
+}
+
+/*
+"neighbors": [
+    {
+        "system-id": "0000.0000.0001",
+        "instances": [
+            {
+                "id": 0,
+                "metric": 10,
+                "subtlvs": [
+                    {
+                        "type": "admin-group",
+                        "admin-group": 10
+                    }
+                ]
+            }
+        ]
+    }
+]
+*/
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -144,4 +247,36 @@ struct NokiaNeighborInstance {
 #[serde(rename_all = "kebab-case")]
 struct NokiaHostname {
     hostname: String
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct NokiaIsReachability {
+    neighbors: Vec<NokiaSimpleNeighbor>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct NokiaSimpleNeighbor {
+    system_id: String,
+    default_metric: NokiaSimpleMetric,
+    delay_metric: Option<NokiaSimpleMetric>,
+    error_metric: Option<NokiaSimpleMetric>,
+    expense_metric: Option<NokiaSimpleMetric>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct NokiaSimpleMetric {
+    flags: u8,
+    metric: u8
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct NokiaRouterCapabilities {
+    instance_number: u32,
+    flags: u8,
+    router_id: String,
+    subtlvs: Option<Vec<NokiaSubTlv>>
 }
