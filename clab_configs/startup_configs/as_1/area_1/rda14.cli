@@ -1,0 +1,26 @@
+enter candidate
+set / network-instance default type default
+set / network-instance default admin-state enable
+set / interface ethernet-1/1 admin-state enable
+set / interface ethernet-1/1 subinterface 0 admin-state enable
+set / interface ethernet-1/1 subinterface 0 ipv4 admin-state enable
+set / interface ethernet-1/1 subinterface 0 ipv4 address 10.1.34.4/24
+set / network-instance default interface ethernet-1/1.0
+set / interface ethernet-1/2 admin-state enable
+set / interface ethernet-1/2 subinterface 0 admin-state enable
+set / interface ethernet-1/2 subinterface 0 ipv4 admin-state enable
+set / interface ethernet-1/2 subinterface 0 ipv4 address 10.101.5.14/24
+set / network-instance default interface ethernet-1/2.0
+set / interface lo0 admin-state enable
+set / interface lo0 subinterface 0 admin-state enable
+set / interface lo0 subinterface 0 ipv4 admin-state enable
+set / interface lo0 subinterface 0 ipv4 address 100.1.1.4/32
+set / network-instance default interface lo0.0
+set / network-instance default protocols ospf instance 1 admin-state enable
+set / network-instance default protocols ospf instance 1 router-id 100.1.1.4
+set / network-instance default protocols ospf instance 1 version ospf-v2
+set / network-instance default protocols ospf instance 1 area 0.0.0.1 interface ethernet-1/1.0
+set / network-instance default protocols ospf instance 1 area 0.0.0.1 interface ethernet-1/2.0
+set / network-instance default protocols ospf instance 1 area 0.0.0.1 interface lo0.0
+commit now
+save startup
