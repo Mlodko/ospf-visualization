@@ -31,8 +31,12 @@ configs = {
                             "ethernet-1/1.0",
                             "ethernet-1/2.0",
                             "ethernet-1/3.0",
-                            "ethernet-1/4.0",
                             "lo0.0",
+                        ]
+                    },
+                    "0.0.0.2": {
+                        "interfaces": [
+                            "ethernet-1/4.0",
                         ]
                     }
                 },
@@ -125,7 +129,7 @@ configs = {
             "ethernet-1/1": {"ip_address": "10.0.34.4/24"},
             "ethernet-1/2": {"ip_address": "10.0.14.4/24"},
             "ethernet-1/3": {"ip_address": "10.0.24.4/24"},
-            "ethernet-1/4": {"ip_address": "10.102.1.1/24"},
+            "ethernet-1/4": {"ip_address": "10.102.4.4/24"},
             "ethernet-1/5": {"ip_address": "10.0.45.4/24"},
             "lo0": {"ip_address": "100.1.0.4/32"},
         },
@@ -138,9 +142,13 @@ configs = {
                             "ethernet-1/1.0",
                             "ethernet-1/2.0",
                             "ethernet-1/3.0",
-                            "ethernet-1/4.0",
                             "ethernet-1/5.0",
                             "lo0.0",
+                        ]
+                    },
+                    "0.0.0.2": {
+                        "interfaces": [
+                            "ethernet-1/4.0",
                         ]
                     }
                 },
@@ -344,7 +352,7 @@ configs = {
     },
     "rda24": {
         "interfaces": {
-            "ethernet-1/1": {"ip_address": "10.2.34.3/24"},
+            "ethernet-1/1": {"ip_address": "10.2.34.4/24"},
             "ethernet-1/2": {"ip_address": "10.2.24.4/24"},
             "ethernet-1/3": {"ip_address": "10.102.5.24/24"},
             "lo0": {"ip_address": "100.1.2.4/32"},
@@ -642,6 +650,9 @@ def configure_isis(commands: list[str], isis_config: dict[str, Any]) -> None:
         commands.append(f"set / network-instance default protocols isis instance 1 interface {interface_name} level {if_level}")
 
 def configure_bgp(commands: list[str], bgp_config: dict[str, Any]) -> None:
+    print("Skipping BGP configuration")
+    return
+
     as_number = bgp_config["as_number"]
     router_id = bgp_config["router_id"]
     neighbors = bgp_config["neighbors"]
