@@ -39,21 +39,30 @@ set / routing-policy policy export-as10-aggr statement 10 match prefix prefix-se
 set / routing-policy policy export-as10-aggr statement 10 action policy-result accept
 set / routing-policy policy export-as20-aggr statement 10 match prefix prefix-set as20-aggr
 set / routing-policy policy export-as20-aggr statement 10 action policy-result accept
-set / network-instance default protocols isis instance 1 export-policy [ export-as10-aggr export-as20-aggr ]
+set / routing-policy policy export-both-as statement 10 match prefix prefix-set as10-aggr
+set / routing-policy policy export-both-as statement 10 action policy-result accept
+set / routing-policy policy export-both-as statement 20 match prefix prefix-set as20-aggr
+set / routing-policy policy export-both-as statement 20 action policy-result accept
+set / network-instance default protocols isis instance 1 export-policy export-both-as
 set / network-instance default protocols bgp admin-state enable
 set / network-instance default protocols bgp autonomous-system 20
 set / network-instance default protocols bgp router-id 100.2.0.1
 set / network-instance default protocols bgp ebgp-default-policy import-reject-all false
+network-instance default protocols bgp afi-safi ipv4-unicast admin-state enable
+set / network-instance default aggregate-routes route 20.0.0.0/8 admin-state enable
+set / network-instance default aggregate-routes route 100.2.0.0/16 admin-state enable
 set / routing-policy prefix-set as10-aggr prefix 10.0.0.0/8 mask-length-range exact
 set / routing-policy prefix-set as10-aggr prefix 100.1.0.0/16 mask-length-range exact
 set / routing-policy prefix-set as20-aggr prefix 20.0.0.0/8 mask-length-range exact
 set / routing-policy prefix-set as20-aggr prefix 100.2.0.0/16 mask-length-range exact
-set / network-instance default aggregate-routes route 20.0.0.0/8 admin-state enable
-set / network-instance default aggregate-routes route 100.2.0.0/16 admin-state enable
 set / routing-policy policy export-as10-aggr statement 10 match prefix prefix-set as10-aggr
 set / routing-policy policy export-as10-aggr statement 10 action policy-result accept
 set / routing-policy policy export-as20-aggr statement 10 match prefix prefix-set as20-aggr
 set / routing-policy policy export-as20-aggr statement 10 action policy-result accept
+set / routing-policy policy export-both-as statement 10 match prefix prefix-set as10-aggr
+set / routing-policy policy export-both-as statement 10 action policy-result accept
+set / routing-policy policy export-both-as statement 20 match prefix prefix-set as20-aggr
+set / routing-policy policy export-both-as statement 20 action policy-result accept
 set / network-instance default protocols bgp group ebgp-peers admin-state enable
 set / network-instance default protocols bgp group ebgp-peers peer-as 10
 set / network-instance default protocols bgp group ebgp-peers afi-safi ipv4-unicast admin-state enable

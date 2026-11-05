@@ -638,6 +638,11 @@ def configure_aggregate_policies(commands: list[str]) -> None:
     commands.append("set / routing-policy policy export-as20-aggr statement 10 match prefix prefix-set as20-aggr")
     commands.append("set / routing-policy policy export-as20-aggr statement 10 action policy-result accept")
 
+    commands.append("set / routing-policy policy export-both-as statement 10 match prefix prefix-set as10-aggr")
+    commands.append("set / routing-policy policy export-both-as statement 10 action policy-result accept")
+    commands.append("set / routing-policy policy export-both-as statement 20 match prefix prefix-set as20-aggr")
+    commands.append("set / routing-policy policy export-both-as statement 20 action policy-result accept")
+
 def configure_default_route(commands: list[str]) -> None:
     commands.append("set / routing-policy prefix-set default-route prefix 0.0.0.0/0 mask-length-range exact")
     commands.append("set / routing-policy policy export-default statement 10 match prefix prefix-set default-route")
@@ -665,7 +670,7 @@ def configure_ospf(commands: list[str], ospf_config: dict[str, Any]) -> None:
             "set / network-instance default protocols ospf instance 1 asbr"
         )
         commands.append(
-            "set / network-instance default protocols ospf instance 1 export-policy [ export-as10-aggr export-as20-aggr ]"
+            "set / network-instance default protocols ospf instance 1 export-policy export-both-as"
         )
 
 def configure_isis(commands: list[str], isis_config: dict[str, Any]) -> None:
@@ -693,7 +698,7 @@ def configure_isis(commands: list[str], isis_config: dict[str, Any]) -> None:
         configure_as_prefix_sets(commands)
         configure_aggregate_policies(commands)
         commands.append(
-            "set / network-instance default protocols isis instance 1 export-policy [ export-as10-aggr export-as20-aggr ]"
+            "set / network-instance default protocols isis instance 1 export-policy export-both-as"
         )
 
 def configure_aggregate_routes(commands: list[str], as_number: str) -> None:
@@ -729,10 +734,12 @@ def configure_bgp(commands: list[str], bgp_config: dict[str, Any]) -> None:
 
     commands.append(f"set / {BGP_PREFIX} ebgp-default-policy import-reject-all false")
 
+    commands.append(f"{BGP_PREFIX} afi-safi ipv4-unicast admin-state enable")
+
     remote_as_number = "20" if local_as_number == "10" else "10"
 
-    configure_as_prefix_sets(commands)
     configure_aggregate_routes(commands, local_as_number)
+    configure_as_prefix_sets(commands)
     configure_aggregate_policies(commands)
 
     commands.append(f"set / {BGP_PREFIX} group ebgp-peers admin-state enable")
