@@ -624,6 +624,20 @@ def configure_interface(commands: list[str], interface_name: str, interface_conf
     commands.append(f"set / interface {interface_name} subinterface 0 ipv4 address {interface_config['ip_address']}")
     commands.append(f"set / network-instance default interface {interface_name}.0")
 
+def configure_as_prefix_sets(commands: list[str]) -> None:
+    commands.append("set / routing-policy prefix-set as10-aggr prefix 10.0.0.0/8 mask-length-range exact")
+    commands.append("set / routing-policy prefix-set as10-aggr prefix 100.1.0.0/16 mask-length-range exact")
+
+    commands.append("set / routing-policy prefix-set as20-aggr prefix 20.0.0.0/8 mask-length-range exact")
+    commands.append("set / routing-policy prefix-set as20-aggr prefix 100.2.0.0/16 mask-length-range exact")
+
+def configure_aggregate_policies(commands: list[str]) -> None:
+    commands.append("set / routing-policy policy export-as10-aggr statement 10 match prefix prefix-set as10-aggr")
+    commands.append("set / routing-policy policy export-as10-aggr statement 10 action policy-result accept")
+
+    commands.append("set / routing-policy policy export-as20-aggr statement 10 match prefix prefix-set as20-aggr")
+    commands.append("set / routing-policy policy export-as20-aggr statement 10 action policy-result accept")
+
 def configure_default_route(commands: list[str]) -> None:
     commands.append("set / routing-policy prefix-set default-route prefix 0.0.0.0/0 mask-length-range exact")
     commands.append("set / routing-policy policy export-default statement 10 match prefix prefix-set default-route")
@@ -645,12 +659,13 @@ def configure_ospf(commands: list[str], ospf_config: dict[str, Any]) -> None:
             )
 
     if ospf_config.get("asbr"):
-        configure_default_route(commands)
+        configure_as_prefix_sets(commands)
+        configure_aggregate_policies(commands)
         commands.append(
             "set / network-instance default protocols ospf instance 1 asbr"
         )
         commands.append(
-            "set / network-instance default protocols ospf instance 1 export-policy [ export-default ]"
+            "set / network-instance default protocols ospf instance 1 export-policy [ export-as10-aggr export-as20-aggr ]"
         )
 
 def configure_isis(commands: list[str], isis_config: dict[str, Any]) -> None:
@@ -675,10 +690,20 @@ def configure_isis(commands: list[str], isis_config: dict[str, Any]) -> None:
         commands.append(f"set / network-instance default protocols isis instance 1 interface {interface_name} level {if_level}")
 
     if isis_config.get("default_route"):
-        configure_default_route(commands)
+        configure_as_prefix_sets(commands)
+        configure_aggregate_policies(commands)
         commands.append(
-            "set / network-instance default protocols isis instance 1 export-policy [ export-default ]"
+            "set / network-instance default protocols isis instance 1 export-policy [ export-as10-aggr export-as20-aggr ]"
         )
+
+def configure_aggregate_routes(commands: list[str], as_number: str) -> None:
+    if as_number == "10":
+        commands.append("set / network-instance default aggregate-routes route 10.0.0.0/8 admin-state enable")
+        commands.append("set / network-instance default aggregate-routes route 100.1.0.0/16 admin-state enable")
+    elif as_number == "20":
+        commands.append("set / network-instance default aggregate-routes route 20.0.0.0/8 admin-state enable")
+        commands.append("set / network-instance default aggregate-routes route 100.2.0.0/16 admin-state enable")
+
 
 def configure_bgp(commands: list[str], bgp_config: dict[str, Any]) -> None:
     """
@@ -697,12 +722,47 @@ def configure_bgp(commands: list[str], bgp_config: dict[str, Any]) -> None:
     """
     BGP_PREFIX = "network-instance default protocols bgp"
     commands.append(f"set / {BGP_PREFIX} admin-state enable")
-    as_number = bgp_config["as_number"]
-    commands.append(f"set / {BGP_PREFIX} autonomous-system {as_number}")
+    local_as_number = bgp_config["as_number"]
+    commands.append(f"set / {BGP_PREFIX} autonomous-system {local_as_number}")
     router_id = bgp_config["router_id"]
     commands.append(f"set / {BGP_PREFIX} router-id {router_id}")
 
-    commands.append(f"")
+    commands.append(f"set / {BGP_PREFIX} ebgp-default-policy import-reject-all false")
+
+    remote_as_number = "20" if local_as_number == "10" else "10"
+
+    configure_as_prefix_sets(commands)
+    configure_aggregate_routes(commands, local_as_number)
+    configure_aggregate_policies(commands)
+
+    commands.append(f"set / {BGP_PREFIX} group ebgp-peers admin-state enable")
+    commands.append(f"set / {BGP_PREFIX} group ebgp-peers peer-as {remote_as_number}")
+    commands.append(f"set / {BGP_PREFIX} group ebgp-peers afi-safi ipv4-unicast admin-state enable")
+
+    if local_as_number == "10":
+        commands.append(f"set / {BGP_PREFIX} group ebgp-peers export-policy [ export-as10-aggr ]")
+        commands.append(f"set / {BGP_PREFIX} group ebgp-peers import-policy [ export-as20-aggr ]")
+    else:
+        commands.append(f"set / {BGP_PREFIX} group ebgp-peers export-policy [ export-as20-aggr ]")
+        commands.append(f"set / {BGP_PREFIX} group ebgp-peers import-policy [ export-as10-aggr ]")
+
+    commands.append(f"set / {BGP_PREFIX} group ibgp-peers admin-state enable")
+    commands.append(f"set / {BGP_PREFIX} group ibgp-peers peer-as {local_as_number}")
+    commands.append(f"set / {BGP_PREFIX} group ibgp-peers afi-safi ipv4-unicast admin-state enable")
+
+
+
+    for neighbor_ip, neighbor_config in bgp_config["neighbors"].items():
+        peer_as = neighbor_config["peer_as"]
+        if peer_as == local_as_number:
+            commands.append(f"set / {BGP_PREFIX} neighbor {neighbor_ip} admin-state enable")
+            commands.append(f"set / {BGP_PREFIX} neighbor {neighbor_ip} peer-group ibgp-peers")
+            commands.append(f"set / {BGP_PREFIX} neighbor {neighbor_ip} next-hop-self true")
+        else:
+            commands.append(f"set / {BGP_PREFIX} neighbor {neighbor_ip} admin-state enable")
+            commands.append(f"set / {BGP_PREFIX} neighbor {neighbor_ip} peer-group ebgp-peers")
+
+
         
 
 BASE_DIR = Path(__file__).resolve().parent
