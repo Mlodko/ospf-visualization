@@ -25,6 +25,7 @@ configs = {
         "protocols": {
             "ospf": {
                 "router_id": "100.1.0.1",
+                "asbr": True,
                 "areas": {
                     "0.0.0.0": {
                         "interfaces": [
@@ -42,12 +43,14 @@ configs = {
                 },
             },
             "bgp": {
-                "as_number": "1",
+                "as_number": "10",
                 "router_id": "100.1.0.1",
-                "redistribute": ["ospf"],
                 "neighbors": {
+                    "100.1.0.2": {
+                        "peer_as": "10"
+                    },
                     "120.0.1.1": {
-                        "peer_as": "2"
+                        "peer_as": "20"
                     }
                 }
             }
@@ -65,6 +68,7 @@ configs = {
         "protocols": {
             "ospf": {
                 "router_id": "100.1.0.2",
+                "asbr": True,
                 "areas": {
                     "0.0.0.0": {
                         "interfaces": [
@@ -82,12 +86,14 @@ configs = {
                 },
             },
             "bgp": {
-                "as_number": "1",
+                "as_number": "10",
                 "router_id": "100.1.0.2",
-                "redistribute": ["ospf"],
                 "neighbors": {
+                    "100.1.0.1": {
+                        "peer_as": "10"
+                    },
                     "120.0.2.1": {
-                        "peer_as": "2"
+                        "peer_as": "20"
                     }
                 }
             }
@@ -427,6 +433,7 @@ configs = {
             "isis": {
                 "level": "2", # 1, 2, or 1-2
                 "net": "49.0000.0000.0000.0001.00",
+                "default_route": True,
                 "interfaces": {
                     "ethernet-1/2.0": {
                         "level": "2"
@@ -440,12 +447,14 @@ configs = {
                 }
             },
             "bgp": {
-                "as_number": "2",
+                "as_number": "20",
                 "router_id": "100.2.0.1",
-                "redistribute": ["isis"],
                 "neighbors": {
+                    "100.2.0.2": {
+                        "peer_as": "20"
+                    },
                     "120.0.1.0": {
-                        "peer_as": "1"
+                        "peer_as": "10"
                     }
                 }
             }
@@ -462,6 +471,7 @@ configs = {
             "isis": {
                 "level": "2", # 1, 2, or 1-2
                 "net": "49.0000.0000.0000.0002.00",
+                "default_route": True,
                 "interfaces": {
                     "ethernet-1/2.0" : {
                         "level": "2"
@@ -475,12 +485,14 @@ configs = {
                 }
             },
             "bgp": {
-                "as_number": "2",
+                "as_number": "20",
                 "router_id": "100.2.0.2",
-                "redistribute": ["isis"],
                 "neighbors": {
+                    "100.2.0.1": {
+                        "peer_as": "20"
+                    },
                     "120.0.2.0": {
-                        "peer_as": "1"
+                        "peer_as": "10"
                     }
                 }
             }
@@ -612,6 +624,10 @@ def configure_interface(commands: list[str], interface_name: str, interface_conf
     commands.append(f"set / interface {interface_name} subinterface 0 ipv4 address {interface_config['ip_address']}")
     commands.append(f"set / network-instance default interface {interface_name}.0")
 
+def configure_default_route(commands: list[str]) -> None:
+    commands.append("set / routing-policy prefix-set default-route prefix 0.0.0.0/0 mask-length-range exact")
+    commands.append("set / routing-policy policy export-default statement 10 match prefix prefix-set default-route")
+    commands.append("set / routing-policy policy export-default statement 10 action policy-result accept")
 
 def configure_ospf(commands: list[str], ospf_config: dict[str, Any]) -> None:
     router_id = ospf_config["router_id"]
@@ -627,6 +643,15 @@ def configure_ospf(commands: list[str], ospf_config: dict[str, Any]) -> None:
             commands.append(
                 f"set / network-instance default protocols ospf instance 1 area {area_id} interface {interface_name}"
             )
+
+    if ospf_config.get("asbr"):
+        configure_default_route(commands)
+        commands.append(
+            "set / network-instance default protocols ospf instance 1 asbr"
+        )
+        commands.append(
+            "set / network-instance default protocols ospf instance 1 export-policy [ export-default ]"
+        )
 
 def configure_isis(commands: list[str], isis_config: dict[str, Any]) -> None:
     commands.append("set / network-instance default protocols isis instance 1 admin-state enable")
@@ -649,94 +674,35 @@ def configure_isis(commands: list[str], isis_config: dict[str, Any]) -> None:
         commands.append(f"set / network-instance default protocols isis instance 1 interface {interface_name} admin-state enable")
         commands.append(f"set / network-instance default protocols isis instance 1 interface {interface_name} level {if_level}")
 
+    if isis_config.get("default_route"):
+        configure_default_route(commands)
+        commands.append(
+            "set / network-instance default protocols isis instance 1 export-policy [ export-default ]"
+        )
+
 def configure_bgp(commands: list[str], bgp_config: dict[str, Any]) -> None:
-    print("Skipping BGP configuration")
-    return
-
+    """
+    "bgp": {
+        "as_number": "10",
+        "router_id": "100.1.0.1",
+        "neighbors": {
+            "100.1.0.2": {
+                "peer_as": "10"
+            },
+            "120.0.1.1": {
+                "peer_as": "20"
+            }
+        }
+    }
+    """
+    BGP_PREFIX = "network-instance default protocols bgp"
+    commands.append(f"set / {BGP_PREFIX} admin-state enable")
     as_number = bgp_config["as_number"]
+    commands.append(f"set / {BGP_PREFIX} autonomous-system {as_number}")
     router_id = bgp_config["router_id"]
-    neighbors = bgp_config["neighbors"]
-    redistribute = bgp_config.get("redistribute", [])
+    commands.append(f"set / {BGP_PREFIX} router-id {router_id}")
 
-    if not neighbors:
-        raise ValueError("BGP requires at least one neighbor")
-    peer_as_numbers = {neighbor_config.get("peer_as") for neighbor_config in neighbors.values()}
-    if None in peer_as_numbers:
-        missing = [
-            neighbor
-            for neighbor, neighbor_config in neighbors.items()
-            if "peer_as" not in neighbor_config
-        ]
-        raise ValueError(f"Missing 'peer_as' for BGP neighbor(s): {missing}")
-    if len(peer_as_numbers) != 1:
-        raise ValueError("All neighbors in the eBGP group must have the same peer AS")
-    invalid_protocols = set(redistribute) - {"ospf", "isis"}
-    if invalid_protocols:
-        raise ValueError(f"Unsupported BGP redistribution protocol(s): {sorted(invalid_protocols)}")
-
-    base = "set / network-instance default protocols bgp"
-    commands.extend(
-        [
-            f"{base} admin-state enable",
-            f"{base} router-id {router_id}",
-            f"{base} autonomous-system {as_number}",
-        ]
-    )
-
-    if redistribute:
-        export_policy = "bgp-to-ebgp"
-        commands.append(
-            f"set / routing-policy policy {export_policy} default-action policy-result reject"
-        )
-        for index, protocol in enumerate(redistribute, start=10):
-            protocol_name = "ospfv2" if protocol == "ospf" else "isis"
-            commands.extend(
-                [
-                    f"set / routing-policy policy {export_policy} statement {index} "
-                    f"match protocol {protocol_name}",
-                    f"set / routing-policy policy {export_policy} statement {index} "
-                    "action policy-result accept",
-                ]
-            )
-
-        import_policy = "bgp-to-igp"
-        commands.append(
-            f"set / routing-policy policy {import_policy} "
-            "default-action policy-result reject"
-        )
-        commands.extend(
-            [
-                f"set / routing-policy policy {import_policy} statement 10 match protocol bgp",
-                f"set / routing-policy policy {import_policy} statement 10 "
-                "action policy-result accept",
-            ]
-        )
-
-    group_name = "ebgp"
-    commands.append(f"{base} group {group_name} admin-state enable")
-    commands.append(f"{base} group {group_name} peer-as {peer_as_numbers.pop()}")
-    commands.append(f"{base} group {group_name} afi-safi ipv4-unicast admin-state enable")
-    if redistribute:
-        commands.append(
-            f"{base} group {group_name} export-policy [ bgp-to-ebgp ]"
-        )
-        commands.append(
-            f"{base} group {group_name} import-policy [ bgp-to-igp ]"
-        )
-
-    for neighbor, neighbor_config in neighbors.items():
-        commands.append(f"{base} neighbor {neighbor} peer-group {group_name}")
-
-    if "ospf" in redistribute:
-        commands.append(
-            "set / network-instance default protocols ospf instance 1 "
-            "export-policy [ bgp-to-igp ]"
-        )
-    if "isis" in redistribute:
-        commands.append(
-            "set / network-instance default protocols isis instance 1 ipv4-unicast "
-            "export-policy [ bgp-to-igp ]"
-        )
+    commands.append(f"")
         
 
 BASE_DIR = Path(__file__).resolve().parent
