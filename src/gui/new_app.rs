@@ -34,8 +34,10 @@ use crate::{
                     state::PacketInspectorState,
                 },
             },
-            graph::GraphPanel, theme::ThemeSelect,
-        }, tools::{path_tool::PathTool, select_tool::SelectTool, tray::ToolsTray},
+            graph::GraphPanel,
+            theme::ThemeSelect,
+        },
+        tools::{path_tool::PathTool, select_tool::SelectTool, tray::ToolsTray},
     },
     network::{
         edge::Edge,
@@ -50,7 +52,6 @@ use crate::{
         store::{MergeConfig, SourceId, TopologyStore},
     },
 };
-
 
 thread_local! {
     static THEME: RefCell<ThemeId> = RefCell::new(ThemeId::Macchiato);
@@ -73,16 +74,17 @@ impl ThemeId {
             ThemeId::Mocha => "Mocha",
         }
     }
-    
+
     pub fn all() -> impl Iterator<Item = ThemeId> {
         [
             ThemeId::Macchiato,
             ThemeId::Latte,
             ThemeId::Frappe,
             ThemeId::Mocha,
-        ].into_iter()
+        ]
+        .into_iter()
     }
-    
+
     pub fn theme(&self) -> Theme {
         match self {
             ThemeId::Macchiato => catppuccin_egui::MACCHIATO,
@@ -207,7 +209,7 @@ impl App {
             ssh_connect_result: Arc::new(Mutex::new(None)),
             snmp_connect_status: ConnectStatus::Idle,
             snmp_connect_result: Arc::new(Mutex::new(None)),
-            
+
             tool_tray: ToolsTray::new(Pos2::ZERO, vec![Box::new(SelectTool), Box::new(PathTool)]),
 
             merge_config,
@@ -373,7 +375,8 @@ impl GraphActions for App {
     }
 
     fn selected_node(&self) -> Option<&Node> {
-        let node = self.graph
+        let node = self
+            .graph
             .graph
             .selected_nodes()
             .first()
@@ -393,26 +396,28 @@ impl GraphActions for App {
     }
 
     fn node_index_to_uuid(&self, index: petgraph::prelude::NodeIndex) -> Option<Uuid> {
-        self.graph.graph.node(index)
-            .map(|node| node.payload().id)
+        self.graph.graph.node(index).map(|node| node.payload().id)
     }
 
     fn compute_path(&mut self, start: Uuid, end: Uuid) -> Option<(u32, Vec<Uuid>)> {
-        if let (Some(start_idx), Some(end_idx)) = (self.graph.node_id_to_index_map.get(&start), self.graph.node_id_to_index_map.get(&end)) {
+        if let (Some(start_idx), Some(end_idx)) = (
+            self.graph.node_id_to_index_map.get(&start),
+            self.graph.node_id_to_index_map.get(&end),
+        ) {
             petgraph::algo::astar(
                 &self.graph.graph.g(),
                 *start_idx,
                 |node| node == *end_idx,
-                |e|  {
-                    (&e.weight().payload().metric).into()
-                },
-                |_| 0
+                |e| (&e.weight().payload().metric).into(),
+                |_| 0,
             )
             .map(|(cost, path)| {
                 let path = path
                     .into_iter()
                     .map(|node_idx| {
-                        self.graph.graph.node(node_idx)
+                        self.graph
+                            .graph
+                            .node(node_idx)
                             .expect("Node not found, this should never happen")
                             .payload()
                             .id
@@ -420,7 +425,7 @@ impl GraphActions for App {
                     .collect();
                 (cost, path)
             })
-        } else { 
+        } else {
             None
         }
     }
@@ -532,7 +537,7 @@ impl eframe::App for App {
             graph_panel.ui(ctx, ui, self);
             self.graph_panel = graph_panel;
         });
-        
+
         {
             let mut tool_tray = std::mem::take(&mut self.tool_tray);
             tool_tray.ui(ctx, self);
@@ -611,7 +616,7 @@ impl App {
                 connection_panel.ui(ctx, ui, self);
                 self.connections_panel = connection_panel;
             });
-        { 
+        {
             let mut autopoller = std::mem::take(&mut self.autopoller);
             autopoller.ui(ctx, ui, self);
             self.autopoller = autopoller;

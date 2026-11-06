@@ -37,7 +37,7 @@ pub struct GraphOverlayState {
 
     pub edge_labels_enabled: bool,
     pub edge_weights: HashMap<(Uuid, Uuid), f32>,
-    
+
     pub path_preview: Option<PathPreview>,
 }
 
@@ -175,7 +175,7 @@ pub fn get_edge_weight(ctx: &Context, src: Uuid, dst: Uuid) -> Option<f32> {
 pub struct PathPreview {
     start_uuid: Uuid,
     cursor_screen_pos: Pos2,
-    dash_phase: f32
+    dash_phase: f32,
 }
 
 impl PathPreview {
@@ -186,24 +186,22 @@ impl PathPreview {
             dash_phase,
         }
     }
-    
+
     pub fn start_uuid(&self) -> Uuid {
         self.start_uuid
     }
-    
+
     pub fn cursor_screen_pos(&self) -> Pos2 {
         self.cursor_screen_pos
     }
-    
+
     pub fn dash_phase(&self) -> f32 {
         self.dash_phase
     }
 }
 
 pub fn path_preview(ctx: &Context) -> Option<PathPreview> {
-    with_overlay(ctx, |over| {
-        over.path_preview
-    })
+    with_overlay(ctx, |over| over.path_preview)
 }
 
 pub fn set_path_preview(ctx: &Context, preview: PathPreview) {
@@ -213,7 +211,5 @@ pub fn set_path_preview(ctx: &Context, preview: PathPreview) {
 }
 
 pub fn clear_path_preview(ctx: &Context) -> Option<PathPreview> {
-    with_overlay(ctx, |overlay| {
-        overlay.path_preview.take()
-    })
+    with_overlay(ctx, |overlay| overlay.path_preview.take())
 }

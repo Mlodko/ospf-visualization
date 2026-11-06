@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{adapters::{RoutingMessage, RoutingProtocol, VendorAdapter}, data_acquisition::{TransportPayload, TransportProtocol}};
+use crate::{
+    adapters::{RoutingMessage, RoutingProtocol, VendorAdapter},
+    data_acquisition::{TransportPayload, TransportProtocol},
+};
 use anyhow::anyhow;
 use egui::Area;
 use ipnetwork::IpNetwork;
@@ -9,7 +12,9 @@ use serde::Deserialize;
 pub struct NokiaGnmiIsisAdapter;
 
 impl NokiaGnmiIsisAdapter {
-    fn lsp_json_to_lsp(lsp_json: serde_json::Value) -> Result<Vec<crate::adapters::packets::isis::Lsp>, anyhow::Error> {
+    fn lsp_json_to_lsp(
+        lsp_json: serde_json::Value,
+    ) -> Result<Vec<crate::adapters::packets::isis::Lsp>, anyhow::Error> {
         let mut lsps = Vec::new();
         todo!("Implement parsing Nokia's LSP JSON to LSPs.");
         Ok(lsps)
@@ -35,20 +40,26 @@ impl VendorAdapter for NokiaGnmiIsisAdapter {
         ]
     }
 
-    fn parse_transport_payload(&self, payload: crate::data_acquisition::TransportPayload) -> Result<Vec<crate::adapters::RoutingMessage>, anyhow::Error> {
+    fn parse_transport_payload(
+        &self,
+        payload: crate::data_acquisition::TransportPayload,
+    ) -> Result<Vec<crate::adapters::RoutingMessage>, anyhow::Error> {
         let payload = match payload {
             TransportPayload::Grpc(p) => p,
-            _ => return Err(anyhow!("Unsupported transport payload for Nokia Gnmi ISIS adapter"))
+            _ => {
+                return Err(anyhow!(
+                    "Unsupported transport payload for Nokia Gnmi ISIS adapter"
+                ));
+            }
         };
 
         let lsp_json: serde_json::Value = serde_json::from_str(&payload)?;
         let lsps = Self::lsp_json_to_lsp(lsp_json)?;
 
-        Ok(
-            lsps.into_iter()
+        Ok(lsps
+            .into_iter()
             .map(|lsp| RoutingMessage::IsIs(lsp))
-            .collect()
-        )
+            .collect())
     }
 }
 
@@ -65,7 +76,7 @@ struct NokiaLsp {
     pub sequence_number: u32,
     pub tlvs: Vec<NokiaTlv>,
     pub version: u8,
-    pub version2: u8
+    pub version2: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,7 +90,7 @@ struct NokiaTlv {
     extended_is_reachability: Option<NokiaExtendedIsReachability>,
     hostname: Option<NokiaHostname>,
     is_reachability: Option<NokiaIsReachability>,
-    router_capabilities: Option<NokiaRouterCapabilities>
+    router_capabilities: Option<NokiaRouterCapabilities>,
 }
 
 /*
@@ -92,7 +103,7 @@ IsReachability(IsReachabilityTlv),
 ExtendedReachability(IsExtendedReachabilityTlv),
 - [skip] /// TLV #128: IP Reachability — IPv4 prefixes directly connected or redistributed by this router.
 IpReachability(IpReachabilityTlv),
-- [x] /// TLV #135: 
+- [x] /// TLV #135:
 ExtendedIpReachability(ExtendedIpReachabilityTlv),
 - [x] /// TLV #137: Hostname — the router's human-readable name.
 Hostname(String),
@@ -104,12 +115,12 @@ RouterCapability(RouterCapabilityTlv),
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct NokiaAreaAddress {
-    address: Vec<String>
+    address: Vec<String>,
 }
 
 impl From<NokiaAreaAddress> for crate::adapters::packets::isis::AreaAddressesTlv {
     fn from(value: NokiaAreaAddress) -> Self {
-        use crate::adapters::packets::isis::{AreaAddress};
+        use crate::adapters::packets::isis::AreaAddress;
         let string_to_area_address = |s: String| -> Option<AreaAddress> {
             // Expecting area addresses to be in the format of "49.0001" or similar.
             let normalized = s.replace(".", "").to_lowercase();
@@ -121,13 +132,13 @@ impl From<NokiaAreaAddress> for crate::adapters::packets::isis::AreaAddressesTlv
             Some(AreaAddress { raw_address: bytes })
         };
 
-        let addresses = value.address.into_iter()
-        .filter_map(string_to_area_address)
-        .collect::<Vec<AreaAddress>>();
-        
-        Self {
-            addresses
-        }
+        let addresses = value
+            .address
+            .into_iter()
+            .filter_map(string_to_area_address)
+            .collect::<Vec<AreaAddress>>();
+
+        Self { addresses }
     }
 }
 
@@ -135,7 +146,7 @@ impl From<NokiaAreaAddress> for crate::adapters::packets::isis::AreaAddressesTlv
 #[serde(rename_all = "kebab-case")]
 struct NokiaAuthentication {
     authentication_key: String,
-    crypto_type: String
+    crypto_type: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,13 +157,13 @@ struct NokiaExtV4Reachability {
 
 impl From<NokiaExtV4Reachability> for crate::adapters::packets::isis::ExtendedIpReachabilityTlv {
     fn from(value: NokiaExtV4Reachability) -> Self {
-        let neighbors = value.prefixes.into_iter()
-        .map(|prefix| prefix.into())
-        .collect();
+        let neighbors = value
+            .prefixes
+            .into_iter()
+            .map(|prefix| prefix.into())
+            .collect();
 
-        Self {
-            neighbors
-        }
+        Self { neighbors }
     }
 }
 
@@ -165,12 +176,15 @@ struct NokiaPrefix {
     up_down: bool,
 
     #[serde(default)]
-    subtlvs: Option<Vec<NokiaSubTlv>>
+    subtlvs: Option<Vec<NokiaSubTlv>>,
 }
 
 impl From<NokiaPrefix> for crate::adapters::packets::isis::ExtendedIpReachabilityNeighbor {
     fn from(value: NokiaPrefix) -> Self {
-        let prefix: IpNetwork = value.prefix.parse().expect("Failed to parse prefix into IpNetwork");
+        let prefix: IpNetwork = value
+            .prefix
+            .parse()
+            .expect("Failed to parse prefix into IpNetwork");
         Self {
             prefix,
             metric: value.metric,
@@ -185,16 +199,18 @@ struct NokiaSubTlv {
     #[serde(rename = "type")]
     kind: String,
     #[serde(flatten)]
-    payload: HashMap<String, serde_json::Value>
+    payload: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct NokiaExtendedIsReachability {
-    neighbors: Vec<NokiaIsNeighbor>
+    neighbors: Vec<NokiaIsNeighbor>,
 }
 
-impl From<NokiaExtendedIsReachability> for crate::adapters::packets::isis::IsExtendedReachabilityTlv {
+impl From<NokiaExtendedIsReachability>
+    for crate::adapters::packets::isis::IsExtendedReachabilityTlv
+{
     fn from(value: NokiaExtendedIsReachability) -> Self {
         todo!()
     }
@@ -204,7 +220,7 @@ impl From<NokiaExtendedIsReachability> for crate::adapters::packets::isis::IsExt
 #[serde(rename_all = "kebab-case")]
 struct NokiaIsNeighbor {
     system_id: String,
-    instances: Vec<NokiaNeighborInstance>
+    instances: Vec<NokiaNeighborInstance>,
 }
 
 impl From<NokiaIsNeighbor> for crate::adapters::packets::isis::ExtendedIsNeighbor {
@@ -238,15 +254,15 @@ impl From<NokiaIsNeighbor> for crate::adapters::packets::isis::ExtendedIsNeighbo
 struct NokiaNeighborInstance {
     id: u64,
     metric: u32,
-    
+
     #[serde(default)]
-    subtlvs: Option<Vec<NokiaSubTlv>>
+    subtlvs: Option<Vec<NokiaSubTlv>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct NokiaHostname {
-    hostname: String
+    hostname: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -269,7 +285,7 @@ struct NokiaSimpleNeighbor {
 #[serde(rename_all = "kebab-case")]
 struct NokiaSimpleMetric {
     flags: u8,
-    metric: u8
+    metric: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -278,5 +294,5 @@ struct NokiaRouterCapabilities {
     instance_number: u32,
     flags: u8,
     router_id: String,
-    subtlvs: Option<Vec<NokiaSubTlv>>
+    subtlvs: Option<Vec<NokiaSubTlv>>,
 }

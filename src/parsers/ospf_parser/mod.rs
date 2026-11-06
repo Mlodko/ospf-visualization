@@ -1,4 +1,6 @@
-use crate::{data_acquisition::transport::snmp::SnmpClientError, parsers::ospf_parser::lsa::LsaError};
+use crate::{
+    data_acquisition::transport::snmp::SnmpClientError, parsers::ospf_parser::lsa::LsaError,
+};
 
 /*
 This module handles converting raw router data into semantic OSPF data structures,
@@ -34,5 +36,5 @@ pub mod source;
 #[deprecated]
 pub enum OspfError {
     Lsa(LsaError),
-    Snmp(SnmpClientError)
+    Snmp(SnmpClientError),
 }

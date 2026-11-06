@@ -76,21 +76,21 @@ impl NodeInfo {
             _ => None,
         }
     }
-    
+
     pub fn router_mut(&mut self) -> Option<&mut Router> {
         match self {
             NodeInfo::Router(r) => Some(r),
             _ => None,
         }
     }
-    
+
     pub fn network(&self) -> Option<&Network> {
         match self {
             NodeInfo::Network(n) => Some(n),
             _ => None,
         }
     }
-    
+
     pub fn network_mut(&mut self) -> Option<&mut Network> {
         match self {
             NodeInfo::Network(n) => Some(n),
@@ -111,7 +111,7 @@ impl Network {
     pub fn protocol_data(&self) -> Option<&ProtocolData> {
         self.protocol_data.as_ref()
     }
-    
+
     pub fn protocol_data_mut(&mut self) -> Option<&mut ProtocolData> {
         self.protocol_data.as_mut()
     }
@@ -131,7 +131,7 @@ impl OspfPayload {
             _ => None,
         }
     }
-    
+
     pub fn router_mut(&mut self) -> Option<&mut OspfRouterPayload> {
         match self {
             OspfPayload::Router(r) => Some(r),
@@ -145,7 +145,7 @@ impl OspfPayload {
             _ => None,
         }
     }
-    
+
     pub fn network_mut(&mut self) -> Option<&mut OspfNetworkPayload> {
         match self {
             OspfPayload::Network(n) => Some(n),
@@ -159,7 +159,7 @@ impl OspfPayload {
             _ => None,
         }
     }
-    
+
     pub fn summary_network_mut(&mut self) -> Option<&mut OspfSummaryNetPayload> {
         match self {
             OspfPayload::SummaryNetwork(n) => Some(n),
@@ -169,9 +169,7 @@ impl OspfPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OspfSummaryAsbrPayload {
-    
-}
+pub struct OspfSummaryAsbrPayload {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OspfRouterPayload {
@@ -246,25 +244,25 @@ pub struct OspfAdvertisement {
 }
 
 impl OspfAdvertisement {
-    pub fn new(advertisement: std::sync::Arc<OspfLinkStateAdvertisement>, raw: std::sync::Arc<Vec<u8>>) -> Self {
-        Self {
-            advertisement,
-            raw,
-        }
+    pub fn new(
+        advertisement: std::sync::Arc<OspfLinkStateAdvertisement>,
+        raw: std::sync::Arc<Vec<u8>>,
+    ) -> Self {
+        Self { advertisement, raw }
     }
-    
+
     pub fn advertisement(&self) -> &OspfLinkStateAdvertisement {
         &self.advertisement
     }
-    
+
     pub fn advertisement_arc(&self) -> Arc<OspfLinkStateAdvertisement> {
         self.advertisement.clone()
     }
-    
+
     pub fn raw(&self) -> &Vec<u8> {
         &self.raw
     }
-    
+
     pub fn raw_arc(&self) -> Arc<Vec<u8>> {
         self.raw.clone()
     }
@@ -416,21 +414,21 @@ impl ProtocolData {
             _ => None,
         }
     }
-    
+
     pub fn ospf_mut(&mut self) -> Option<&mut OspfData> {
         match self {
             ProtocolData::Ospf(data) => Some(data),
             _ => None,
         }
     }
-    
+
     pub fn isis(&self) -> Option<&IsIsData> {
         match self {
             ProtocolData::IsIs(data) => Some(data),
             _ => None,
         }
     }
-    
+
     pub fn other(&self) -> Option<&String> {
         match self {
             ProtocolData::Other(data) => Some(data),

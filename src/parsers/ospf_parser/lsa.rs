@@ -1,18 +1,20 @@
 use crate::{
     network::node::{
-        Node, NodeInfo, OspfAdvertisement, OspfData, OspfPayload, OspfRouterPayload, OspfVirtualLink, PerAreaRouterFacet, ProtocolData
+        Node, NodeInfo, OspfAdvertisement, OspfData, OspfPayload, OspfRouterPayload,
+        OspfVirtualLink, PerAreaRouterFacet, ProtocolData,
     },
-    parsers::ospf_parser::source::OspfRawRow, topology::protocol::ProtocolTopologyError,
+    parsers::ospf_parser::source::OspfRawRow,
+    topology::protocol::ProtocolTopologyError,
 };
 use ipnetwork::IpNetwork;
 use ospf_parser::{
     OspfLinkStateAdvertisement, OspfNetworkLinksAdvertisement, OspfRouterLinksAdvertisement,
 };
-use thiserror::Error;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
+use thiserror::Error;
 
 use nom_derive::Parse;
 
@@ -43,8 +45,12 @@ impl Into<ProtocolTopologyError> for LsaError {
         let description = self.to_string();
         use LsaError::*;
         match self {
-            InvalidLsaType | InvalidNetworkMask(_) | WrongSnmpTable => ProtocolTopologyError::Semantic(description),
-            ProtocolNotImplemented | IncompleteData | WrongDataType => ProtocolTopologyError::Conversion(description)
+            InvalidLsaType | InvalidNetworkMask(_) | WrongSnmpTable => {
+                ProtocolTopologyError::Semantic(description)
+            }
+            ProtocolNotImplemented | IncompleteData | WrongDataType => {
+                ProtocolTopologyError::Conversion(description)
+            }
         }
     }
 }
@@ -55,7 +61,7 @@ pub struct OspfLsdbEntry {
     link_state_id: Ipv4Addr,
     router_id: Ipv4Addr,
     advertisement: Arc<OspfLinkStateAdvertisement>,
-    raw_lsa_bytes: Arc<Vec<u8>>
+    raw_lsa_bytes: Arc<Vec<u8>>,
 }
 
 impl TryFrom<OspfRawRow> for OspfLsdbEntry {
@@ -72,7 +78,7 @@ impl TryFrom<OspfRawRow> for OspfLsdbEntry {
             link_state_id: row.link_state_id,
             router_id: row.router_id,
             advertisement: Arc::new(advertisement),
-            raw_lsa_bytes: Arc::new(row.lsa_bytes)
+            raw_lsa_bytes: Arc::new(row.lsa_bytes),
         })
     }
 }
@@ -96,10 +102,10 @@ impl TryInto<Node> for OspfLsdbEntry {
                 return Err(LsaError::InvalidLsaType);
             }
         };
-        
+
         let label = match &node_info {
             NodeInfo::Router(r) => r.id.as_string(),
-            NodeInfo::Network(n) => n.ip_address.to_string()
+            NodeInfo::Network(n) => n.ip_address.to_string(),
         };
 
         Ok(Node::new(node_info, Some(label)))
@@ -143,7 +149,7 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
                     peer_router_id: RouterId::Ipv4(link.link_id()),
                 };
                 virtual_links.push(link);
-            },
+            }
             _ => {}
         }
     }
@@ -172,14 +178,15 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
             p2p_link_count,
             transit_link_count,
             stub_link_count,
-            virtual_link_count
+            virtual_link_count,
         }],
         virtual_links,
     };
 
     let checksum = Some(advertisement.header.ls_checksum);
-    
-    let base_advertisement = OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
+
+    let base_advertisement =
+        OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
 
     let ospf_data: OspfData = OspfData {
         ls_seq_no: advertisement.header.ls_seq_number,
@@ -216,8 +223,9 @@ pub fn parse_lsa_type_2_to_network(lsa: &OspfLsdbEntry) -> Result<Network, LsaEr
         IpAddr::V4(advertisement.network_mask()),
     )
     .map_err(|_| LsaError::InvalidNetworkMask(advertisement.network_mask()))?;
-    
-    let base_advertisement = OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
+
+    let base_advertisement =
+        OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
 
     let protocol_data = ProtocolData::Ospf(OspfData {
         ls_seq_no: advertisement.header.ls_seq_number,
@@ -260,8 +268,9 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
         IpAddr::V4(adv.network_mask()),
     )
     .map_err(|_| LsaError::InvalidNetworkMask(adv.network_mask()))?;
-    
-    let base_advertisement = OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
+
+    let base_advertisement =
+        OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
 
     let protocol_data = ProtocolData::Ospf(OspfData {
         ls_seq_no: adv.header.ls_seq_number,
@@ -277,7 +286,7 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
             crate::network::node::OspfSummaryNetPayload {
                 metric: adv.metric as u32,
                 origin_abr: RouterId::Ipv4(lsa.router_id),
-            }
+            },
         ),
     });
 
@@ -297,34 +306,34 @@ fn parse_lsa_type_4(lsa: &OspfLsdbEntry) -> Result<Router, LsaError> {
     } else {
         return Err(LsaError::InvalidLsaType);
     };
-    
+
     let base_advertisement = OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
     let header = &adv.header;
-    
-    let payload = OspfPayload::Router(OspfRouterPayload { 
-        is_abr: (), 
-        is_asbr: (), 
-        is_virtual_link_endpoint: (), 
-        is_nssa_capable: (), 
-        p2p_link_count: (), 
-        transit_link_count: (), 
-        stub_link_count: (), 
-        virtual_link_count: (), 
-        link_metrics: (), 
-        per_area_facets: (), 
-        virtual_links: () 
+
+    let payload = OspfPayload::Router(OspfRouterPayload {
+        is_abr: (),
+        is_asbr: (),
+        is_virtual_link_endpoint: (),
+        is_nssa_capable: (),
+        p2p_link_count: (),
+        transit_link_count: (),
+        stub_link_count: (),
+        virtual_link_count: (),
+        link_metrics: (),
+        per_area_facets: (),
+        virtual_links: ()
     });
-    
-    let protocol_data = ProtocolData::Ospf(OspfData { 
-        area_id: lsa.area_id, 
-        base_advertisement, 
-        merged_advertisements: vec![], 
-        ls_age: header.ls_age, 
-        ls_seq_no: header.ls_seq_number, 
-        link_state_id: header.link_state_id(), 
-        advertising_router: header.advertising_router(), 
-        checksum: header.ls_checksum, 
-        payload: () 
+
+    let protocol_data = ProtocolData::Ospf(OspfData {
+        area_id: lsa.area_id,
+        base_advertisement,
+        merged_advertisements: vec![],
+        ls_age: header.ls_age,
+        ls_seq_no: header.ls_seq_number,
+        link_state_id: header.link_state_id(),
+        advertising_router: header.advertising_router(),
+        checksum: header.ls_checksum,
+        payload: ()
     });
 }
 */

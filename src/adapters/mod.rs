@@ -21,5 +21,8 @@ pub trait VendorAdapter {
     fn transport_protocol(&self) -> crate::data_acquisition::TransportProtocol;
     fn subscribtion_paths(&self) -> Vec<String>;
 
-    fn parse_transport_payload(&self, payload: crate::data_acquisition::TransportPayload) -> Result<Vec<RoutingMessage>, anyhow::Error>;
+    fn parse_transport_payload(
+        &self,
+        payload: crate::data_acquisition::TransportPayload,
+    ) -> Result<Vec<RoutingMessage>, anyhow::Error>;
 }

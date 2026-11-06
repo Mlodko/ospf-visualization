@@ -1,12 +1,12 @@
+mod adapters;
 mod data_acquisition;
 mod gui;
 mod network;
 mod parsers;
-mod topology;
-mod adapters; // new parsers
+mod topology; // new parsers
 
-use std::sync::Arc;
 use gui::app;
+use std::sync::Arc;
 
 use crate::gui::new_app;
 

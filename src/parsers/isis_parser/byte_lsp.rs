@@ -7,11 +7,10 @@ use std::fmt::Display;
 
 use thiserror::Error;
 
-
 pub struct IsisLspFlags {
     partition_repair: bool,
     attached: bool,
-    overload: bool
+    overload: bool,
 }
 
 impl From<u8> for IsisLspFlags {
@@ -22,7 +21,7 @@ impl From<u8> for IsisLspFlags {
         IsisLspFlags {
             partition_repair,
             attached,
-            overload
+            overload,
         }
     }
 }
@@ -31,11 +30,11 @@ impl IsisLspFlags {
     pub fn partition_repair(&self) -> bool {
         self.partition_repair
     }
-    
+
     pub fn attached(&self) -> bool {
         self.attached
     }
-    
+
     pub fn overload(&self) -> bool {
         self.overload
     }
@@ -49,15 +48,19 @@ impl IsisLspId {
     pub fn new(raw_id: [u8; 8]) -> Self {
         IsisLspId { raw_id }
     }
-    
+
     pub fn get_raw_id(&self) -> &[u8] {
         &self.raw_id
     }
-    
+
     pub fn get_system_id(&self) -> IsisSystemId {
-        IsisSystemId::new(self.raw_id[0..6].try_into().expect("Slice out of bounds, this should never happen"))
+        IsisSystemId::new(
+            self.raw_id[0..6]
+                .try_into()
+                .expect("Slice out of bounds, this should never happen"),
+        )
     }
-    
+
     pub fn get_pseudonode_id(&self) -> u8 {
         self.raw_id[6]
     }
@@ -76,7 +79,7 @@ impl IsisSystemId {
 pub enum IsisIsType {
     Level1,
     Level2,
-    Level1Level2
+    Level1Level2,
 }
 
 impl From<u8> for IsisIsType {
@@ -95,21 +98,23 @@ impl From<u8> for IsisIsType {
 pub enum IsisLspTlv {
     // To be populated with actual TLVs
     // Each TLV type should be a variant of this enum that contains a specific TLV struct
-    AreaAddresses(AreaAddressesTlv)
+    AreaAddresses(AreaAddressesTlv),
 }
 
 pub struct AreaAddressesTlv {
-    addresses: Vec<IsisAreaAddress>
+    addresses: Vec<IsisAreaAddress>,
 }
 
 pub struct IsisAreaAddress {
-    raw_address: Vec<u8>
+    raw_address: Vec<u8>,
 }
 
 impl Display for IsisAreaAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Format as groups of 2 bytes (4 hex digits) separated by dots
-        let chunks = self.raw_address.chunks(2)
+        let chunks = self
+            .raw_address
+            .chunks(2)
             .map(|chunk| {
                 if chunk.len() == 2 {
                     format!("{:02X}{:02X}", chunk[0], chunk[1])
@@ -126,7 +131,7 @@ impl Display for IsisAreaAddress {
 #[derive(Debug, Error)]
 pub enum IsisError {
     #[error("Invalid area address: {0:?}")]
-    InvalidAreaAddress(Vec<u8>)
+    InvalidAreaAddress(Vec<u8>),
 }
 
 impl TryFrom<&[u8]> for IsisAreaAddress {
@@ -141,7 +146,9 @@ impl IsisAreaAddress {
         if raw_address.len() > 13 {
             Err(IsisError::InvalidAreaAddress(raw_address.to_vec()))
         } else {
-            Ok(IsisAreaAddress { raw_address: raw_address.to_vec() })
+            Ok(IsisAreaAddress {
+                raw_address: raw_address.to_vec(),
+            })
         }
     }
 }
@@ -154,5 +161,5 @@ pub struct IsisLspHeader {
     checksum: u16,
     flags: IsisLspFlags,
     is_type: IsisIsType,
-    tlvs: Vec<IsisLspTlv>
+    tlvs: Vec<IsisLspTlv>,
 }

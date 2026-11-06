@@ -40,8 +40,12 @@ impl HostnameEntry {
         let system_id_tok = tokens[tokens.len() - 2];
 
         // Validate system ID using existing SystemId parser
-        let system_id = SystemId::from_string(system_id_tok)
-            .map_err(|e| format!("invalid system id '{}' in line '{}': {:?}", system_id_tok, line, e))?;
+        let system_id = SystemId::from_string(system_id_tok).map_err(|e| {
+            format!(
+                "invalid system id '{}' in line '{}': {:?}",
+                system_id_tok, line, e
+            )
+        })?;
 
         Ok(HostnameEntry {
             hostname: hostname_tok.to_string(),
@@ -101,7 +105,7 @@ impl HostnameMap {
             .insert(entry.hostname.clone(), entry.clone());
         self.map_by_system_id.insert(entry.system_id.clone(), entry);
     }
-    
+
     pub fn len(&self) -> usize {
         self.map_by_hostname.len()
     }
@@ -110,9 +114,11 @@ impl HostnameMap {
     pub fn get_by_hostname(&self, hostname: &str) -> Option<&HostnameEntry> {
         self.map_by_hostname.get(hostname)
     }
-    
+
     pub fn get_system_id_by_hostname(&self, hostname: &str) -> Option<&SystemId> {
-        self.map_by_hostname.get(hostname).map(|entry| &entry.system_id)
+        self.map_by_hostname
+            .get(hostname)
+            .map(|entry| &entry.system_id)
     }
 
     /// Lookup by SystemId.
@@ -124,7 +130,7 @@ impl HostnameMap {
     pub fn contains_hostname(&self, hostname: &str) -> bool {
         self.map_by_hostname.contains_key(hostname)
     }
-    
+
     pub fn iter_entries(&self) -> impl Iterator<Item = &HostnameEntry> {
         self.map_by_hostname.values()
     }
@@ -132,13 +138,16 @@ impl HostnameMap {
 
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_parse_hostname_map() {
         let input = include_str!("../../../test_data/isis_hostname_map_input.txt");
         let map = HostnameMap::build_map_from_lines(input.lines());
-        
+
         assert_eq!(map.len(), 8);
-        assert_eq!(map.get_system_id_by_hostname("r1").unwrap(), &SystemId::from_string("0000.0000.0001").unwrap());
+        assert_eq!(
+            map.get_system_id_by_hostname("r1").unwrap(),
+            &SystemId::from_string("0000.0000.0001").unwrap()
+        );
     }
 }

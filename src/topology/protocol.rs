@@ -107,7 +107,7 @@ where
     pub fn source(&self) -> &S {
         &self.source
     }
-    
+
     pub fn source_mut(&mut self) -> &mut S {
         &mut self.source
     }
@@ -243,11 +243,8 @@ where
             .await
             .map_err(TopologyError::from)
     }
-    
+
     async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, TopologyError> {
-        self.source
-            .fetch_stats()
-            .await
-            .map_err(TopologyError::from)
+        self.source.fetch_stats().await.map_err(TopologyError::from)
     }
 }

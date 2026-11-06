@@ -8,7 +8,10 @@ use ospf_parser::{OspfLinkStateAdvertisement, OspfRouterLinkType};
 
 use crate::{
     network::{
-        node::{Network, Node, NodeInfo, OspfData, OspfPayload, OspfVirtualLink, PerAreaRouterFacet, ProtocolData},
+        node::{
+            Network, Node, NodeInfo, OspfData, OspfPayload, OspfVirtualLink, PerAreaRouterFacet,
+            ProtocolData,
+        },
         router::{Router, RouterId},
     },
     parsers::ospf_parser::{
@@ -129,7 +132,7 @@ impl RoutingProtocol for OspfBfsProtocol {
     ) -> Result<(), super::protocol::ProtocolTopologyError> {
         let mut nodes_map: HashMap<LsaKey, Node> = HashMap::new();
         let mut summaries_map: HashMap<Ipv4Addr, Vec<Node>> = HashMap::new();
-        
+
         self.consolidate_routers(nodes);
         self.consolidate_networks(nodes);
 
@@ -191,12 +194,17 @@ impl RoutingProtocol for OspfBfsProtocol {
         // Initialize BFS queue with source node
         let mut queue = VecDeque::new();
         queue.push_back(source_node);
-        
+
         fn debug_print_link(link: &ospf_parser::OspfRouterLink) {
-            println!("Current link: {{ Link Data: {}, Link Id: {}, Link Type: {}, TOS 0 metric: {}}}",
-                link.link_data(), link.link_id(), link.link_type, link.tos_0_metric)
+            println!(
+                "Current link: {{ Link Data: {}, Link Id: {}, Link Type: {}, TOS 0 metric: {}}}",
+                link.link_data(),
+                link.link_id(),
+                link.link_type,
+                link.tos_0_metric
+            )
         }
-        
+
         while let Some(current_node) = queue.pop_front() {
             match &current_node.info {
                 NodeInfo::Router(router) => {
@@ -205,49 +213,68 @@ impl RoutingProtocol for OspfBfsProtocol {
                         let mut all_advertisements = vec![data.base_advertisement.clone()];
                         all_advertisements.extend(data.merged_advertisements.iter().cloned());
                         for adv in all_advertisements {
-                            if let OspfLinkStateAdvertisement::RouterLinks(adv) = adv.advertisement()
+                            if let OspfLinkStateAdvertisement::RouterLinks(adv) =
+                                adv.advertisement()
                             {
                                 for link in adv.links.iter() {
                                     debug_print_link(link);
                                     match link.link_type {
                                         OspfRouterLinkType::PointToPoint => {
                                             let neighbor_router_id = link.link_id();
-                                            let neighbor_key =
-                                                LsaKey::new(LsaType::Router, neighbor_router_id.clone());
+                                            let neighbor_key = LsaKey::new(
+                                                LsaType::Router,
+                                                neighbor_router_id.clone(),
+                                            );
                                             if visited.contains(&neighbor_key) {
-                                                println!("Skipping already visited neighbor {}", &neighbor_router_id);
+                                                println!(
+                                                    "Skipping already visited neighbor {}",
+                                                    &neighbor_router_id
+                                                );
                                                 continue;
                                             }
-                                            let neighbor_node = nodes_map.get(&neighbor_key).ok_or(
-                                                ProtocolTopologyError::Semantic(format!(
+                                            let neighbor_node = nodes_map
+                                                .get(&neighbor_key)
+                                                .ok_or(ProtocolTopologyError::Semantic(format!(
                                                     "Missing neighbor node {}",
                                                     neighbor_router_id
-                                                )),
-                                            )?;
-    
-                                            if let NodeInfo::Router(neighbor_router) = &neighbor_node.info {
+                                                )))?;
+
+                                            if let NodeInfo::Router(neighbor_router) =
+                                                &neighbor_node.info
+                                            {
                                                 if let Some(ProtocolData::Ospf(neighbor_data)) =
                                                     &neighbor_router.protocol_data
                                                 {
                                                     if let OspfLinkStateAdvertisement::RouterLinks(
                                                         neighbor_adv,
-                                                    ) = neighbor_data.base_advertisement.advertisement()
+                                                    ) = neighbor_data
+                                                        .base_advertisement
+                                                        .advertisement()
                                                     {
-                                                        let neighbor_link_ids: Vec<_> = neighbor_adv
-                                                            .links
-                                                            .iter()
-                                                            .map(|link| link.link_id())
-                                                            .collect();
-    
-                                                        if !neighbor_link_ids.contains(&data.link_state_id) {
-                                                            println!("Skipping, neighbor {} doesn't have a link back to {}", neighbor_router_id, &router.id);
+                                                        let neighbor_link_ids: Vec<_> =
+                                                            neighbor_adv
+                                                                .links
+                                                                .iter()
+                                                                .map(|link| link.link_id())
+                                                                .collect();
+
+                                                        if !neighbor_link_ids
+                                                            .contains(&data.link_state_id)
+                                                        {
+                                                            println!(
+                                                                "Skipping, neighbor {} doesn't have a link back to {}",
+                                                                neighbor_router_id, &router.id
+                                                            );
                                                             continue;
                                                         }
                                                     }
                                                 }
                                             }
-                                            
-                                            println!("Adding neighbor {} to queue", neighbor_router_id);
+
+                                            println!(
+                                                "Adding neighbor {} to queue",
+                                                neighbor_router_id
+                                            );
                                             visited.insert(neighbor_key);
                                             queue.push_back(neighbor_node.clone());
                                         }
@@ -256,7 +283,10 @@ impl RoutingProtocol for OspfBfsProtocol {
                                             let net_mask = link.link_data();
                                             let net_key = LsaKey::new(LsaType::Network, net_addr);
                                             if visited.contains(&net_key) {
-                                                println!("Skipping already visited network {}", net_addr);
+                                                println!(
+                                                    "Skipping already visited network {}",
+                                                    net_addr
+                                                );
                                                 continue;
                                             }
                                             let network = Network {
@@ -270,26 +300,35 @@ impl RoutingProtocol for OspfBfsProtocol {
                                             };
                                             let node_info = NodeInfo::Network(network.clone());
                                             let node = Node::new(node_info, None);
-                                            println!("Created node for stub network {} and added to queue", &network.ip_address);
+                                            println!(
+                                                "Created node for stub network {} and added to queue",
+                                                &network.ip_address
+                                            );
                                             visited.insert(net_key);
                                             nodes.push(node);
                                         }
                                         OspfRouterLinkType::Transit => {
                                             let dr_if_addr = link.link_id();
-                                            let net_key = LsaKey::new(LsaType::Network, dr_if_addr.clone());
+                                            let net_key =
+                                                LsaKey::new(LsaType::Network, dr_if_addr.clone());
                                             if visited.contains(&net_key) {
-                                                println!("Skipping already visited network node of DR: {}", dr_if_addr);
+                                                println!(
+                                                    "Skipping already visited network node of DR: {}",
+                                                    dr_if_addr
+                                                );
                                                 continue;
                                             }
-                                            let net_node = nodes_map.get(&net_key).ok_or_else( || {
-                                                //dbg!(dr_if_addr);
-                                                //dbg!(nodes_map.iter().filter(|(k, v)| matches!(k.lsa_type, LsaType::Network)));
-                                                ProtocolTopologyError::Semantic(format!(
-                                                    "Missing network node {}", dr_if_addr
-                                                ))
-                                            },
-                                            )?;
-                                            let net_addr = &net_node.info.network().unwrap().ip_address;
+                                            let net_node =
+                                                nodes_map.get(&net_key).ok_or_else(|| {
+                                                    //dbg!(dr_if_addr);
+                                                    //dbg!(nodes_map.iter().filter(|(k, v)| matches!(k.lsa_type, LsaType::Network)));
+                                                    ProtocolTopologyError::Semantic(format!(
+                                                        "Missing network node {}",
+                                                        dr_if_addr
+                                                    ))
+                                                })?;
+                                            let net_addr =
+                                                &net_node.info.network().unwrap().ip_address;
                                             println!("Adding network {} to queue", net_addr);
                                             visited.insert(net_key);
                                             queue.push_back(net_node.clone());
@@ -300,16 +339,22 @@ impl RoutingProtocol for OspfBfsProtocol {
                                             let neighbor_key =
                                                 LsaKey::new(LsaType::Router, neighbor_router_id);
                                             if visited.contains(&neighbor_key) {
-                                                println!("Virtual neighbor {} already visited", neighbor_router_id);
+                                                println!(
+                                                    "Virtual neighbor {} already visited",
+                                                    neighbor_router_id
+                                                );
                                                 continue;
                                             }
-                                            let neighbor_node = nodes_map.get(&neighbor_key).ok_or(
-                                                ProtocolTopologyError::Semantic(format!(
+                                            let neighbor_node = nodes_map
+                                                .get(&neighbor_key)
+                                                .ok_or(ProtocolTopologyError::Semantic(format!(
                                                     "Missing neighbor node {}",
                                                     neighbor_router_id
-                                                )),
-                                            )?;
-                                            println!("Adding virtual neighbor {} to queue", neighbor_router_id);
+                                                )))?;
+                                            println!(
+                                                "Adding virtual neighbor {} to queue",
+                                                neighbor_router_id
+                                            );
                                             visited.insert(neighbor_key);
                                             queue.push_back(neighbor_node.clone());
                                         }
@@ -321,7 +366,6 @@ impl RoutingProtocol for OspfBfsProtocol {
                             }
                         }
 
-                        
                         if let RouterId::Ipv4(advertising_id) = &router.id {
                             println!("Entered Summary Branch");
                             println!("Advertising Router ID: {}", advertising_id);
@@ -379,7 +423,10 @@ impl RoutingProtocol for OspfBfsProtocol {
                                                 .map(|link| link.link_id())
                                                 .any(|link_id| link_id == data.link_state_id)
                                             {
-                                                println!("Skipping, neighbor router {} does not have a back link to {}", ip, &net.ip_address);
+                                                println!(
+                                                    "Skipping, neighbor router {} does not have a back link to {}",
+                                                    ip, &net.ip_address
+                                                );
                                                 continue;
                                             }
                                         }
@@ -406,7 +453,7 @@ impl OspfBfsProtocol {
     fn consolidate_routers(&self, nodes: &mut Vec<crate::network::node::Node>) {
         let mut result: Vec<Node> = Vec::new();
         let mut router_by_id_map: HashMap<RouterId, Vec<Node>> = HashMap::new();
-        
+
         for node in nodes.drain(..) {
             match &node.info {
                 NodeInfo::Router(r) => {
@@ -416,10 +463,10 @@ impl OspfBfsProtocol {
                         router_by_id_map.insert(r.id.clone(), vec![node]);
                     }
                 }
-                NodeInfo::Network(_) => result.push(node)
+                NodeInfo::Network(_) => result.push(node),
             }
         }
-        
+
         for (id, mut nodes) in router_by_id_map {
             /*
              * Some rules for consolidation:
@@ -432,25 +479,30 @@ impl OspfBfsProtocol {
              * 7. [x] If no backbone in area_ids then prefer the one with the most p2p + transit links.
              * 8. [x] Merge advertisements into base node's merged_advertisements
              */
-             
+
             // Rule #5 setup
-            let per_area_facets: Vec<PerAreaRouterFacet> = nodes.iter().map(|node| {
-                let router = node.info.router().unwrap();
-                let ospf_data = router.protocol_data().unwrap().ospf().unwrap();
-                let area_id = ospf_data.area_id;
-                
-                let pd = ospf_data.payload.router().unwrap();
-                PerAreaRouterFacet {
-                    area_id,
-                    p2p_link_count: pd.p2p_link_count,
-                    transit_link_count: pd.transit_link_count,
-                    virtual_link_count: pd.virtual_link_count,
-                    stub_link_count: pd.stub_link_count
-                }
-            }).collect();
-            
+            let per_area_facets: Vec<PerAreaRouterFacet> = nodes
+                .iter()
+                .map(|node| {
+                    let router = node.info.router().unwrap();
+                    let ospf_data = router.protocol_data().unwrap().ospf().unwrap();
+                    let area_id = ospf_data.area_id;
+
+                    let pd = ospf_data.payload.router().unwrap();
+                    PerAreaRouterFacet {
+                        area_id,
+                        p2p_link_count: pd.p2p_link_count,
+                        transit_link_count: pd.transit_link_count,
+                        virtual_link_count: pd.virtual_link_count,
+                        stub_link_count: pd.stub_link_count,
+                    }
+                })
+                .collect();
+
             let mut base_node = {
-                if let Some(idx) = nodes.iter().enumerate()
+                if let Some(idx) = nodes
+                    .iter()
+                    .enumerate()
                     // Rule #1
                     .find(|(_, node)| {
                         if let NodeInfo::Router(r) = &node.info {
@@ -465,9 +517,12 @@ impl OspfBfsProtocol {
                     nodes.swap_remove(idx)
                 } else {
                     // Rule #7
-                    let node_idx = nodes.iter().enumerate()
+                    let node_idx = nodes
+                        .iter()
+                        .enumerate()
                         .max_by_key(|(_, node)| {
-                            node.info.router()
+                            node.info
+                                .router()
                                 .map(|r| r.protocol_data())
                                 .flatten()
                                 .map(|pd| pd.ospf())
@@ -481,51 +536,93 @@ impl OspfBfsProtocol {
                     nodes.swap_remove(node_idx)
                 }
             };
-            
+
             // Rule #8
-            let other_advertisements = nodes.iter()
-                .map(|node| node.info.router().unwrap().protocol_data().unwrap().ospf().unwrap().base_advertisement.clone());
-            base_node.info.router_mut().unwrap().protocol_data_mut().unwrap().ospf_mut().unwrap().merged_advertisements.extend(other_advertisements);
-            
+            let other_advertisements = nodes.iter().map(|node| {
+                node.info
+                    .router()
+                    .unwrap()
+                    .protocol_data()
+                    .unwrap()
+                    .ospf()
+                    .unwrap()
+                    .base_advertisement
+                    .clone()
+            });
+            base_node
+                .info
+                .router_mut()
+                .unwrap()
+                .protocol_data_mut()
+                .unwrap()
+                .ospf_mut()
+                .unwrap()
+                .merged_advertisements
+                .extend(other_advertisements);
+
             // Rule #5
-            base_node.info.router_mut().unwrap()
-                .protocol_data_mut().unwrap()
-                .ospf_mut().unwrap()
-                .payload.router_mut().unwrap()
+            base_node
+                .info
+                .router_mut()
+                .unwrap()
+                .protocol_data_mut()
+                .unwrap()
+                .ospf_mut()
+                .unwrap()
+                .payload
+                .router_mut()
+                .unwrap()
                 .per_area_facets = per_area_facets;
-             
-             // Rule #3
+
+            // Rule #3
             {
-                 let base_interfaces = &mut base_node.info.router_mut().unwrap().interfaces;
-                 
-                 let mut interface_set: HashSet<IpAddr> = base_interfaces.iter().cloned().collect();
-                 nodes.iter().for_each(|node| {
-                     node.info.router()
-                         .map(|r| r.interfaces.iter())
-                         .unwrap_or_default()
-                         .for_each(|interface| {
-                             interface_set.insert(*interface);
-                         })
-                 });
-                 
-                 *base_interfaces = interface_set.into_iter().collect();
+                let base_interfaces = &mut base_node.info.router_mut().unwrap().interfaces;
+
+                let mut interface_set: HashSet<IpAddr> = base_interfaces.iter().cloned().collect();
+                nodes.iter().for_each(|node| {
+                    node.info
+                        .router()
+                        .map(|r| r.interfaces.iter())
+                        .unwrap_or_default()
+                        .for_each(|interface| {
+                            interface_set.insert(*interface);
+                        })
+                });
+
+                *base_interfaces = interface_set.into_iter().collect();
             }
             // Rule #4 and #6
             {
-                let base_payload = &mut base_node.info.router_mut().unwrap()
-                    .protocol_data_mut().unwrap().ospf_mut().unwrap()
-                    .payload.router_mut().unwrap();
-                
-                let other_payloads = nodes.iter().map(|node| {
-                    node.info.router().unwrap()
-                        .protocol_data().unwrap()
-                        .ospf().unwrap()
-                        .payload.router()
-                })
-                .filter_map(|p| p);
-                
-                let mut virtual_link_set: HashSet<OspfVirtualLink> = base_payload.virtual_links.iter().cloned().collect();
-                
+                let base_payload = &mut base_node
+                    .info
+                    .router_mut()
+                    .unwrap()
+                    .protocol_data_mut()
+                    .unwrap()
+                    .ospf_mut()
+                    .unwrap()
+                    .payload
+                    .router_mut()
+                    .unwrap();
+
+                let other_payloads = nodes
+                    .iter()
+                    .map(|node| {
+                        node.info
+                            .router()
+                            .unwrap()
+                            .protocol_data()
+                            .unwrap()
+                            .ospf()
+                            .unwrap()
+                            .payload
+                            .router()
+                    })
+                    .filter_map(|p| p);
+
+                let mut virtual_link_set: HashSet<OspfVirtualLink> =
+                    base_payload.virtual_links.iter().cloned().collect();
+
                 other_payloads.for_each(|pd| {
                     base_payload.is_abr |= pd.is_abr;
                     base_payload.is_asbr |= pd.is_asbr;
@@ -533,20 +630,20 @@ impl OspfBfsProtocol {
                     base_payload.is_virtual_link_endpoint |= pd.is_virtual_link_endpoint;
                     virtual_link_set.extend(pd.virtual_links.iter().cloned())
                 });
-                
+
                 base_payload.virtual_links = virtual_link_set.into_iter().collect();
             }
-            
+
             result.push(base_node);
         }
-        
+
         nodes.extend(result);
     }
-    
+
     fn consolidate_networks(&self, nodes: &mut Vec<Node>) {
         let mut result = Vec::new();
         let mut networks_by_prefix_map: HashMap<IpNetwork, Vec<Node>> = HashMap::new();
-        
+
         for node in nodes.drain(..) {
             match &node.info {
                 NodeInfo::Router(_) => {
@@ -562,63 +659,124 @@ impl OspfBfsProtocol {
                 }
             }
         }
-        
+
         for (prefix, mut nodes) in networks_by_prefix_map {
             println!("Processing network prefix: {}", prefix);
             // Prefer concrete network over summary
             let mut base_node = {
-                if let Some(idx) = nodes.iter().enumerate()
-                    .find(|(_, node)| matches!(
-                        node.info.network().unwrap().protocol_data().unwrap().ospf().unwrap().payload,
-                        OspfPayload::Network(_)
-                    )).map(|(idx, _)| idx) {
-                        nodes.swap_remove(idx)
-                    } else {
-                        nodes.pop().unwrap()
-                    }
+                if let Some(idx) = nodes
+                    .iter()
+                    .enumerate()
+                    .find(|(_, node)| {
+                        matches!(
+                            node.info
+                                .network()
+                                .unwrap()
+                                .protocol_data()
+                                .unwrap()
+                                .ospf()
+                                .unwrap()
+                                .payload,
+                            OspfPayload::Network(_)
+                        )
+                    })
+                    .map(|(idx, _)| idx)
+                {
+                    nodes.swap_remove(idx)
+                } else {
+                    nodes.pop().unwrap()
+                }
             };
             println!("Base node: {:#?}", base_node);
-            
+
             // Merge attached routers
             {
-                let mut attached_router_set: HashSet<RouterId> = base_node.info.network().unwrap().attached_routers.iter().cloned().collect();
+                let mut attached_router_set: HashSet<RouterId> = base_node
+                    .info
+                    .network()
+                    .unwrap()
+                    .attached_routers
+                    .iter()
+                    .cloned()
+                    .collect();
                 nodes.iter().for_each(|node| {
-                    let attached = node.info.network().unwrap().attached_routers.iter().cloned();
+                    let attached = node
+                        .info
+                        .network()
+                        .unwrap()
+                        .attached_routers
+                        .iter()
+                        .cloned();
                     attached_router_set.extend(attached);
                 });
-                base_node.info.network_mut().unwrap().attached_routers = attached_router_set.clone().into_iter().collect();
+                base_node.info.network_mut().unwrap().attached_routers =
+                    attached_router_set.clone().into_iter().collect();
                 println!("Merged attached routers: {:#?}", attached_router_set);
             }
-            
+
             // Merge advertisements
             {
-                let other_advertisements = nodes.iter()
-                    .map(|node| node.info.network().unwrap().protocol_data().unwrap().ospf().unwrap().base_advertisement.clone());
-                base_node.info.network_mut().unwrap().protocol_data_mut().unwrap().ospf_mut().unwrap().merged_advertisements.extend(other_advertisements);
+                let other_advertisements = nodes.iter().map(|node| {
+                    node.info
+                        .network()
+                        .unwrap()
+                        .protocol_data()
+                        .unwrap()
+                        .ospf()
+                        .unwrap()
+                        .base_advertisement
+                        .clone()
+                });
+                base_node
+                    .info
+                    .network_mut()
+                    .unwrap()
+                    .protocol_data_mut()
+                    .unwrap()
+                    .ospf_mut()
+                    .unwrap()
+                    .merged_advertisements
+                    .extend(other_advertisements);
             }
-            
+
             // Merge normal payloads
             {
-                let mut base_payload = &mut base_node.info.network_mut().unwrap().protocol_data_mut().unwrap()
-                    .ospf_mut().unwrap().payload;
+                let mut base_payload = &mut base_node
+                    .info
+                    .network_mut()
+                    .unwrap()
+                    .protocol_data_mut()
+                    .unwrap()
+                    .ospf_mut()
+                    .unwrap()
+                    .payload;
                 println!("Base payload: {:#?}", &base_payload);
-                
-                let other_payloads = nodes.iter()
-                    .map(|node| &node.info.network().unwrap().protocol_data().unwrap().ospf().unwrap().payload);
-                
+
+                let other_payloads = nodes.iter().map(|node| {
+                    &node
+                        .info
+                        .network()
+                        .unwrap()
+                        .protocol_data()
+                        .unwrap()
+                        .ospf()
+                        .unwrap()
+                        .payload
+                });
+
                 /*
                     Now there will be 4 different scenarios for each (base, other) pair:
-                    
+
                     Legend:
                     N - Concrete Network
                     S - Summary Network
-                    
+
                     Other\Base | N | S |
                     --------------------
                             N | 1 | 2 |
                             S | 3 | 4 |
-                    
-                    1. N <- N 
+
+                    1. N <- N
                         Merge 2 concrete networks as equals.
                     2. S <- N
                         Should never happen. If an N exists, it will be selected as base.
@@ -627,7 +785,7 @@ impl OspfBfsProtocol {
                     4. S <- S
                         Merge 2 summary networks as equals.
                 */
-                
+
                 for other_payload in other_payloads {
                     match (&mut base_payload, other_payload) {
                         (OspfPayload::Network(base), OspfPayload::Network(other)) => {
@@ -639,7 +797,7 @@ impl OspfBfsProtocol {
                                     base.summaries.push(summary.clone());
                                 }
                             }
-                            
+
                             let external_set: HashSet<_> = base.externals.iter().cloned().collect();
                             for external in &other.externals {
                                 if !external_set.contains(external) {
@@ -648,7 +806,9 @@ impl OspfBfsProtocol {
                             }
                         }
                         (OspfPayload::SummaryNetwork(base), OspfPayload::Network(other)) => {
-                            unreachable!("If the base payload is a summary network, the other payload should be a summary network as well.")
+                            unreachable!(
+                                "If the base payload is a summary network, the other payload should be a summary network as well."
+                            )
                         }
                         (OspfPayload::Network(base), OspfPayload::SummaryNetwork(other)) => {
                             println!("Merging summary into network, other\n:{:#?}", &other);
@@ -661,7 +821,10 @@ impl OspfBfsProtocol {
                             }
                         }
                         (OspfPayload::SummaryNetwork(base), OspfPayload::SummaryNetwork(other)) => {
-                            println!("Two summary networks, selecting the one with lower metric, other\n:{:#?}", &other);
+                            println!(
+                                "Two summary networks, selecting the one with lower metric, other\n:{:#?}",
+                                &other
+                            );
                             if other.metric < base.metric {
                                 println!("Switching to other payload");
                                 *base = other.clone();
@@ -673,7 +836,7 @@ impl OspfBfsProtocol {
                     }
                 }
             }
-            
+
             println!("Merged node:\n{:#?}", &base_node);
             result.push(base_node);
         }

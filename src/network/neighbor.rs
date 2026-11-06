@@ -1,21 +1,29 @@
-use std::{net::IpAddr, time::{Duration, SystemTime}};
+use std::{
+    net::IpAddr,
+    time::{Duration, SystemTime},
+};
 
 use egui::Ui;
 
-use crate::{network::router::RouterId, topology::{ospf_protocol::OspfProtocol, protocol::RoutingProtocol}};
+use crate::{
+    network::router::RouterId,
+    topology::{ospf_protocol::OspfProtocol, protocol::RoutingProtocol},
+};
 
 pub trait Neighbor<P>
-where P: RoutingProtocol {
+where
+    P: RoutingProtocol,
+{
     type NeighborDetails;
     type NeighborState;
     fn get_id(&self) -> RouterId;
     fn get_remote_ip(&self) -> Option<IpAddr>;
     fn get_last_successful_update(&self) -> Option<Duration>;
-    
+
     fn get_state(&self) -> Self::NeighborState;
-    
+
     fn get_details(&self) -> &Self::NeighborDetails;
-    
+
     fn render_row(&self, ui: &mut Ui);
 }
 
@@ -66,5 +74,5 @@ pub enum OspfNeighborState {
     Down,
     Init,
     Full,
-    TwoWay
+    TwoWay,
 }

@@ -328,11 +328,16 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
                 .into(),
             );
         }
-        
+
         let galley = self.label_galley(ctx, circle_radius, self.effective_color(ctx));
-        
-        let label_shape = Self::label_shape(galley, circle_center, circle_radius, self.effective_color(ctx));
-        
+
+        let label_shape = Self::label_shape(
+            galley,
+            circle_center,
+            circle_radius,
+            self.effective_color(ctx),
+        );
+
         shapes.push(label_shape.into());
 
         shapes
@@ -424,21 +429,21 @@ impl NetworkGraphNodeShape {
         );
         shapes.extend(line);
     }
-    
+
     fn label_galley(
-            &self,
-            ctx: &DrawContext,
-            radius: f32,
-            color: Color32,
-        ) -> std::sync::Arc<egui::Galley> {
-            ctx.ctx.fonts_mut(|f| {
-                f.layout_no_wrap(
-                    self.label.clone(),
-                    FontId::new(radius, FontFamily::Monospace),
-                    color,
-                )
-            })
-        }
+        &self,
+        ctx: &DrawContext,
+        radius: f32,
+        color: Color32,
+    ) -> std::sync::Arc<egui::Galley> {
+        ctx.ctx.fonts_mut(|f| {
+            f.layout_no_wrap(
+                self.label.clone(),
+                FontId::new(radius, FontFamily::Monospace),
+                color,
+            )
+        })
+    }
 
     fn label_shape(
         galley: std::sync::Arc<egui::Galley>,

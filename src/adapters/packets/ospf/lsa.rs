@@ -11,9 +11,9 @@ pub struct Lsa {
 
 impl PartialEq for Lsa {
     fn eq(&self, other: &Self) -> bool {
-        self.header.ls_type     == other.header.ls_type &&
-        self.header.ls_id       == other.header.ls_id &&
-        self.header.adv_router  == other.header.adv_router
+        self.header.ls_type == other.header.ls_type
+            && self.header.ls_id == other.header.ls_id
+            && self.header.adv_router == other.header.adv_router
     }
 }
 
@@ -51,8 +51,15 @@ impl Lsa {
         // Return any remaining bytes from the original input beyond the LSA.
         let remaining_after_lsa = &rest_after_header[payload_len..];
         let raw = input.to_vec();
-        
-        Ok((remaining_after_lsa, Lsa { header, payload, raw }))
+
+        Ok((
+            remaining_after_lsa,
+            Lsa {
+                header,
+                payload,
+                raw,
+            },
+        ))
     }
 }
 #[cfg(test)]

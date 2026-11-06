@@ -5,7 +5,7 @@ use snmp2::Oid;
 
 use crate::{
     data_acquisition::transport::{
-        core::{LinkStateValue},
+        core::LinkStateValue,
         snmp::{SnmpClient, SnmpTableRow},
     },
     parsers::ospf_parser::{

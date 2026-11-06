@@ -33,10 +33,14 @@ egui_dock = "0.18.0"
 anyhow = "1.0.100"
 simple-easing = "1.0.1"
 nom = "8.0.0"
-tonic = "0.14.9"
+tonic = {"version" = "0.14.9", "features" = [ "tls-ring", "tls-native-roots"]}
 tonic-prost = "0.14.4"
 prost = "0.14.4"
 prost-types = "0.14.4"
+rustls = "0.23.46"
+tokio-rustls = "0.26.6"
+bytes = "1.12.1"
+futures-util = "0.3"
 
 [build-dependencies]
 tonic-prost-build = "0.14.4"

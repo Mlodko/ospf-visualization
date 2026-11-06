@@ -14,7 +14,10 @@ use std::fmt::Display;
 use async_trait::async_trait;
 use egui::epaint::stats;
 
-use crate::network::{node::Node, router::{InterfaceStats, RouterId}};
+use crate::network::{
+    node::Node,
+    router::{InterfaceStats, RouterId},
+};
 
 /// Error type for topology retrieval.
 #[derive(Debug, Clone)]
@@ -52,15 +55,17 @@ type SourceId = RouterId;
 pub trait SnapshotSource: TopologySource {
     /// Fetches the source ID for the topology data.
     async fn fetch_source_id(&mut self) -> TopologyResult<SourceId>;
-    
+
     /// Fetches nodes and source id and returns a tuple.
-    async fn fetch_snapshot(&mut self) -> TopologyResult<(SourceId, Vec<Node>, Vec<InterfaceStats>)> {
+    async fn fetch_snapshot(
+        &mut self,
+    ) -> TopologyResult<(SourceId, Vec<Node>, Vec<InterfaceStats>)> {
         let source_id = self.fetch_source_id().await?;
         let nodes = self.fetch_nodes().await?;
         let stats = self.fetch_stats().await?;
         Ok((source_id, nodes, stats))
     }
-    
+
     async fn fetch_stats(&mut self) -> TopologyResult<Vec<InterfaceStats>>;
 }
 

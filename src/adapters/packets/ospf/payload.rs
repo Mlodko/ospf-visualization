@@ -5,7 +5,10 @@ use nom::{
     number::complete::{be_u8, be_u16, be_u32},
 };
 
-use crate::adapters::packets::{ospf::header::{LsaType, RouterId}, span::{Field, Span}};
+use crate::adapters::packets::{
+    ospf::header::{LsaType, RouterId},
+    span::{Field, Span},
+};
 
 #[derive(Debug, Clone)]
 pub enum LsaPayload {
@@ -134,11 +137,11 @@ impl RouterFlags {
     pub fn v_bit(&self) -> bool {
         self.0 & 0x0800 != 0
     }
-    
+
     pub fn e_bit(&self) -> bool {
         self.0 & 0x0400 != 0
     }
-    
+
     pub fn b_bit(&self) -> bool {
         self.0 & 0x0200 != 0
     }
@@ -246,12 +249,18 @@ impl RouterLink {
             },
         ))
     }
-    
+
     pub fn link_id(&self) -> RouterLinkIdKind {
         match self.link_type.value {
-            RouterLinkType::PointToPoint | RouterLinkType::Virtual => RouterLinkIdKind::NeighborRouter(RouterId(self.id.value.0)),
-            RouterLinkType::Transit => RouterLinkIdKind::DesignatedRouterId(Ipv4Addr::from_bits(self.id.value.0)),
-            RouterLinkType::Stub => RouterLinkIdKind::StubNetworkNumber(Ipv4Addr::from_bits(self.id.value.0))
+            RouterLinkType::PointToPoint | RouterLinkType::Virtual => {
+                RouterLinkIdKind::NeighborRouter(RouterId(self.id.value.0))
+            }
+            RouterLinkType::Transit => {
+                RouterLinkIdKind::DesignatedRouterId(Ipv4Addr::from_bits(self.id.value.0))
+            }
+            RouterLinkType::Stub => {
+                RouterLinkIdKind::StubNetworkNumber(Ipv4Addr::from_bits(self.id.value.0))
+            }
         }
     }
 }

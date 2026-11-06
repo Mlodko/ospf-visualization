@@ -12,9 +12,13 @@ use crate::{
         lsa::{LsaError, OspfLsdbEntry},
         source::{OspfDataSource, OspfRawRow},
     },
-    topology::{ospf_bfs_protocol::OspfBfsProtocol, protocol::{
-        AcquisitionError, AcquisitionSource, FederationError, ProtocolFederator, ProtocolParseError, ProtocolTopologyError
-    }},
+    topology::{
+        ospf_bfs_protocol::OspfBfsProtocol,
+        protocol::{
+            AcquisitionError, AcquisitionSource, FederationError, ProtocolFederator,
+            ProtocolParseError, ProtocolTopologyError,
+        },
+    },
 };
 use async_trait::async_trait;
 
@@ -343,7 +347,7 @@ impl super::protocol::AcquisitionSource<OspfProtocol> for OspfSnmpAcquisition {
             }
         })
     }
-    
+
     async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, AcquisitionError> {
         self.inner.fetch_stats().await.map_err(|e| match e {
             crate::parsers::ospf_parser::source::OspfSourceError::Acquisition(s) => {
@@ -381,7 +385,7 @@ impl super::protocol::AcquisitionSource<OspfBfsProtocol> for OspfSnmpAcquisition
             }
         })
     }
-    
+
     async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, AcquisitionError> {
         self.inner.fetch_stats().await.map_err(|e| match e {
             crate::parsers::ospf_parser::source::OspfSourceError::Acquisition(s) => {
@@ -408,11 +412,14 @@ pub type OspfBfsSnmpTopology = super::protocol::Topology<OspfBfsProtocol, OspfSn
 
 impl OspfBfsSnmpTopology {
     pub async fn from_snmp_client(client: SnmpClient) -> anyhow::Result<Self> {
-            let mut acquisition = OspfSnmpAcquisition::new(client);
-            let source_id = <OspfSnmpAcquisition as super::protocol::AcquisitionSource<OspfBfsProtocol>>::fetch_source_id(&mut acquisition).await?;
-            let proto = OspfBfsProtocol::new(source_id);
-            Ok(Self::new(proto, acquisition))
-        }
+        let mut acquisition = OspfSnmpAcquisition::new(client);
+        let source_id = <OspfSnmpAcquisition as super::protocol::AcquisitionSource<
+            OspfBfsProtocol,
+        >>::fetch_source_id(&mut acquisition)
+        .await?;
+        let proto = OspfBfsProtocol::new(source_id);
+        Ok(Self::new(proto, acquisition))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -459,12 +466,10 @@ impl OspfFederator {
                     .as_ref()
                     .ok_or(FederationError::MixedProtocols)?;
                 match pd {
-                    ProtocolData::Ospf(odata) => {
-                        match &odata.payload {
-                            OspfPayload::Network(_) | OspfPayload::SummaryNetwork(_) => Ok(()),
-                            _ => Err(FederationError::UnsupportedPayload)
-                        }
-                    }
+                    ProtocolData::Ospf(odata) => match &odata.payload {
+                        OspfPayload::Network(_) | OspfPayload::SummaryNetwork(_) => Ok(()),
+                        _ => Err(FederationError::UnsupportedPayload),
+                    },
                     _ => Err(FederationError::MixedProtocols),
                 }
             }
@@ -508,12 +513,12 @@ impl ProtocolFederator for OspfFederator {
         assert!(!facets.is_empty());
         let router_id = &facets.first().unwrap().info.router().unwrap().id;
         println!("Merging routers with ID: {}", router_id);
-        
-        if router_id.clone() == RouterId::Ipv4(Ipv4Addr::new(2,2,2,2)) {
+
+        if router_id.clone() == RouterId::Ipv4(Ipv4Addr::new(2, 2, 2, 2)) {
             println!("THIS IS THE ROUTER");
             dbg!(facets);
         }
-        
+
         // Pick a base facet (clone it so we can mutate payload)
         let mut base = Self::select_base(&facets).clone();
 
@@ -521,7 +526,8 @@ impl ProtocolFederator for OspfFederator {
         let mut is_asbr = false;
         let mut is_virtual = false;
         let mut is_nssa = false;
-        let mut per_area: HashMap<std::net::Ipv4Addr, (usize, usize, usize, usize)> = HashMap::new();
+        let mut per_area: HashMap<std::net::Ipv4Addr, (usize, usize, usize, usize)> =
+            HashMap::new();
         let mut link_metrics: HashMap<std::net::Ipv4Addr, u16> = HashMap::new();
 
         for facet in facets {
@@ -549,7 +555,8 @@ impl ProtocolFederator for OspfFederator {
         }
 
         // Recompute totals
-        let (mut total_p2p, mut total_transit, mut total_stub, mut total_virtual) = (0usize, 0usize, 0usize, 0usize);
+        let (mut total_p2p, mut total_transit, mut total_stub, mut total_virtual) =
+            (0usize, 0usize, 0usize, 0usize);
         for (_, (p2p, transit, stub, virtual_count)) in &per_area {
             total_p2p += *p2p;
             total_transit += *transit;
@@ -572,13 +579,15 @@ impl ProtocolFederator for OspfFederator {
                     rp.link_metrics = link_metrics;
                     rp.per_area_facets = per_area
                         .into_iter()
-                        .map(|(area_id, (p2p, transit, stub, virtual_count))| PerAreaRouterFacet {
-                            area_id,
-                            p2p_link_count: p2p,
-                            transit_link_count: transit,
-                            stub_link_count: stub,
-                            virtual_link_count: virtual_count,
-                        })
+                        .map(
+                            |(area_id, (p2p, transit, stub, virtual_count))| PerAreaRouterFacet {
+                                area_id,
+                                p2p_link_count: p2p,
+                                transit_link_count: transit,
+                                stub_link_count: stub,
+                                virtual_link_count: virtual_count,
+                            },
+                        )
                         .collect();
                 }
             }

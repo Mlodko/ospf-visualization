@@ -38,7 +38,7 @@ impl JsonIsisProtocol {
             lsp_id: lsp.lsp_id,
             tlvs: lsp.tlvs,
             net_address: net_address,
-            owned: lsp.owned
+            owned: lsp.owned,
         });
 
         Ok(Router {

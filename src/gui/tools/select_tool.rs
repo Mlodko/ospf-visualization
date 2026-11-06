@@ -27,7 +27,7 @@ impl Tool for SelectTool {
     ) {
         // Do nothing, it's the default.
     }
-    
+
     fn id(&self) -> ToolId {
         ToolId::SelectTool
     }

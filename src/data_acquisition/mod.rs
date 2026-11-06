@@ -4,12 +4,12 @@ pub mod transport;
 pub enum TransportProtocol {
     Snmp,
     Ssh,
-    Grpc
+    Grpc,
 }
 
 #[derive(Debug, Clone)]
-pub enum TransportPayload  {
+pub enum TransportPayload {
     Snmp(transport::snmp::PortableSnmpTableRow),
     Ssh(String),
-    Grpc(String)
+    Grpc(String),
 }

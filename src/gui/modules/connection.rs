@@ -5,9 +5,9 @@ use egui::{CollapsingHeader, Id};
 use ssh2::DisconnectCode::ProtocolError;
 use tokio::sync::Mutex;
 
+use crate::gui::actions::ConnectStatus;
 use crate::gui::modules::timed_notice::{self, TimedNotice};
 use crate::gui::new_app::{self, AppPanel, PollResult};
-use crate::gui::actions::ConnectStatus;
 
 const DEFAULT_NOTICE_DURATION: Duration = Duration::from_secs(5);
 
@@ -108,7 +108,7 @@ impl ConnectionsPanel {
             "Clear previous sources on connect",
         );
         ui.separator();
-        
+
         match actions.ssh_connect_status().clone() {
             ConnectStatus::Idle => {
                 if ui.button("Connect").clicked() {
@@ -117,7 +117,7 @@ impl ConnectionsPanel {
                         self.ssh_port,
                         self.ssh_username.clone(),
                         self.ssh_password.clone(),
-                        self.ssh_clear_sources_on_switch
+                        self.ssh_clear_sources_on_switch,
                     )
                 }
             }
@@ -131,24 +131,33 @@ impl ConnectionsPanel {
                         self.snmp_port,
                         self.ssh_username.clone(),
                         self.ssh_password.clone(),
-                        self.ssh_clear_sources_on_switch
+                        self.ssh_clear_sources_on_switch,
                     )
                 }
-                
+
                 let id = Id::new("ssh_success_notice");
                 let ttl = DEFAULT_NOTICE_DURATION;
-                
+
                 let should_clear = timed_notice::notice_in_temp_storage(ctx, ui, id, |_now| {
                     TimedNotice::new(ttl, "SSH connected".into())
                         .colored(new_app::get_theme().theme().green)
-                        .with_create_easing(|t| simple_easing::quart_in_out(t), Duration::from_millis(200))
+                        .with_create_easing(
+                            |t| simple_easing::quart_in_out(t),
+                            Duration::from_millis(200),
+                        )
                         .with_hold_duration(ttl.saturating_sub(Duration::from_millis(1000)))
                         .with_fade_out_easing(|t| simple_easing::cubic_out(t))
-                        .with_destroy_easing(|t| simple_easing::expo_out(t), Duration::from_millis(300))
-                        .with_extend_easing(|t| simple_easing::expo_out(t), Duration::from_millis(800))
+                        .with_destroy_easing(
+                            |t| simple_easing::expo_out(t),
+                            Duration::from_millis(300),
+                        )
+                        .with_extend_easing(
+                            |t| simple_easing::expo_out(t),
+                            Duration::from_millis(800),
+                        )
                         .dismiss_on_click(true)
                 });
-                
+
                 if should_clear {
                     actions.clear_ssh_connect_status();
                 }
@@ -160,24 +169,33 @@ impl ConnectionsPanel {
                         self.snmp_port,
                         self.ssh_username.clone(),
                         self.ssh_password.clone(),
-                        self.ssh_clear_sources_on_switch
+                        self.ssh_clear_sources_on_switch,
                     )
                 }
-                
+
                 let id = Id::new("ssh_failure_notice");
                 let ttl = DEFAULT_NOTICE_DURATION;
-                
+
                 let should_clear = timed_notice::notice_in_temp_storage(ctx, ui, id, |_now| {
                     TimedNotice::new(ttl, format!("SSH connection failed: {}", err))
                         .colored(new_app::get_theme().theme().red)
-                        .with_create_easing(|t| simple_easing::quart_in_out(t), Duration::from_millis(200))
+                        .with_create_easing(
+                            |t| simple_easing::quart_in_out(t),
+                            Duration::from_millis(200),
+                        )
                         .with_hold_duration(ttl.saturating_sub(Duration::from_millis(1000)))
                         .with_fade_out_easing(|t| simple_easing::cubic_out(t))
-                        .with_destroy_easing(|t| simple_easing::expo_out(t), Duration::from_millis(300))
-                        .with_extend_easing(|t| simple_easing::expo_out(t), Duration::from_millis(800))
+                        .with_destroy_easing(
+                            |t| simple_easing::expo_out(t),
+                            Duration::from_millis(300),
+                        )
+                        .with_extend_easing(
+                            |t| simple_easing::expo_out(t),
+                            Duration::from_millis(800),
+                        )
                         .dismiss_on_click(true)
                 });
-                
+
                 if should_clear {
                     actions.clear_ssh_connect_status();
                 }
@@ -244,14 +262,23 @@ impl ConnectionsPanel {
                 let should_clear = timed_notice::notice_in_temp_storage(ctx, ui, id, |_now| {
                     TimedNotice::new(ttl, "SNMP connected".into())
                         .colored(new_app::get_theme().theme().green)
-                        .with_create_easing(|t| simple_easing::quart_in_out(t), Duration::from_millis(200))
+                        .with_create_easing(
+                            |t| simple_easing::quart_in_out(t),
+                            Duration::from_millis(200),
+                        )
                         .with_hold_duration(ttl.saturating_sub(Duration::from_millis(1000)))
                         .with_fade_out_easing(|t| simple_easing::cubic_out(t))
-                        .with_destroy_easing(|t| simple_easing::expo_out(t), Duration::from_millis(300))
-                        .with_extend_easing(|t| simple_easing::expo_out(t), Duration::from_millis(800))
+                        .with_destroy_easing(
+                            |t| simple_easing::expo_out(t),
+                            Duration::from_millis(300),
+                        )
+                        .with_extend_easing(
+                            |t| simple_easing::expo_out(t),
+                            Duration::from_millis(800),
+                        )
                         .dismiss_on_click(true)
                 });
-                
+
                 if should_clear {
                     actions.clear_snmp_connect_status();
                 }
@@ -272,14 +299,23 @@ impl ConnectionsPanel {
                 let should_clear = timed_notice::notice_in_temp_storage(ctx, ui, id, |_now| {
                     TimedNotice::new(ttl, format!("SNMP connection failed: {}", err))
                         .colored(new_app::get_theme().theme().red)
-                        .with_create_easing(|t| simple_easing::quart_in_out(t), Duration::from_millis(200))
+                        .with_create_easing(
+                            |t| simple_easing::quart_in_out(t),
+                            Duration::from_millis(200),
+                        )
                         .with_hold_duration(ttl.saturating_sub(Duration::from_millis(1000)))
                         .with_fade_out_easing(|t| simple_easing::cubic_out(t))
-                        .with_destroy_easing(|t| simple_easing::expo_out(t), Duration::from_millis(300))
-                        .with_extend_easing(|t| simple_easing::expo_out(t), Duration::from_millis(800))
+                        .with_destroy_easing(
+                            |t| simple_easing::expo_out(t),
+                            Duration::from_millis(300),
+                        )
+                        .with_extend_easing(
+                            |t| simple_easing::expo_out(t),
+                            Duration::from_millis(800),
+                        )
                         .dismiss_on_click(true)
                 });
-                
+
                 if should_clear {
                     actions.clear_snmp_connect_status();
                 }

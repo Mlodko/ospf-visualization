@@ -504,7 +504,7 @@ mod tests {
             dbg!(row);
         }
     }
-    
+
     #[tokio::test]
     async fn test_snmp_walk() {
         use std::net::{IpAddr, Ipv4Addr};
@@ -515,11 +515,7 @@ mod tests {
             None,
         );
         let oid = Oid::from_str("1.3.6.1.2.1.4.31.3").unwrap();
-        let query = client.query()
-            .await
-            .unwrap()
-            .oid(oid)
-            .walk();
+        let query = client.query().await.unwrap().oid(oid).walk();
 
         let results = query.execute().await.unwrap();
 

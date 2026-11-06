@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 use egui::{FontId, RichText, TextStyle};
 
 use crate::gui::modules::dock::{
-    DockActions, DockPanel, DockPanelKind, packet::{state::{Packet, PacketInspectorState}}
+    DockActions, DockPanel, DockPanelKind,
+    packet::state::{Packet, PacketInspectorState},
 };
 
 use crate::adapters::packets::span::*;
@@ -23,7 +24,12 @@ impl DockPanel for BytesPacketInspector {
         "Raw Packet Inspector".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _actions: &mut dyn crate::gui::actions::AppActions, dock_actions: &mut dyn DockActions) {
+    fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        _actions: &mut dyn crate::gui::actions::AppActions,
+        dock_actions: &mut dyn DockActions,
+    ) {
         let (raw, span) = {
             let state = self.state.lock().unwrap();
             match state.packet() {
@@ -45,7 +51,7 @@ impl DockPanel for BytesPacketInspector {
 
         render_hex(ui, &raw, span);
     }
-    
+
     fn kind(&self) -> DockPanelKind {
         DockPanelKind::PacketInspectorBytes
     }

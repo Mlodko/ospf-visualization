@@ -1,10 +1,24 @@
-use std::{collections::{HashSet, VecDeque}, net::Ipv4Addr};
+use std::{
+    collections::{HashSet, VecDeque},
+    net::Ipv4Addr,
+};
 
-use egui::ahash::{HashMap};
+use egui::ahash::HashMap;
 use ipnetwork::IpNetwork;
 use uuid::Uuid;
 
-use crate::{network::{node::{IsIsData, Network, Node, NodeInfo, ProtocolData}, router::{Router, RouterId}}, parsers::isis_parser::{core_lsp::{ExtendedIpReachabilityTlv, Lsp, LspError, LspId, SystemId, Tlv}, frr_json_lsp::JsonLspdb, hostname::HostnameMap}, topology::protocol::{ProtocolParseError, ProtocolTopologyError, RoutingProtocol}};
+use crate::{
+    network::{
+        node::{IsIsData, Network, Node, NodeInfo, ProtocolData},
+        router::{Router, RouterId},
+    },
+    parsers::isis_parser::{
+        core_lsp::{ExtendedIpReachabilityTlv, Lsp, LspError, LspId, SystemId, Tlv},
+        frr_json_lsp::JsonLspdb,
+        hostname::HostnameMap,
+    },
+    topology::protocol::{ProtocolParseError, ProtocolTopologyError, RoutingProtocol},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct LspKey {
@@ -38,11 +52,9 @@ pub struct JsonIsisBfsProtocol {
 
 impl JsonIsisBfsProtocol {
     pub fn new(hostname_map: HostnameMap) -> Self {
-        Self {
-            hostname_map,
-        }
+        Self { hostname_map }
     }
-    
+
     fn lsp_to_router(&self, lsp: Lsp) -> Result<Router, ProtocolTopologyError> {
         let id = RouterId::IsIs(lsp.system_id.clone());
         let net_address = lsp.get_net_address();
@@ -142,8 +154,9 @@ impl RoutingProtocol for JsonIsisBfsProtocol {
         &self,
         nodes: &mut Vec<crate::network::node::Node>,
     ) -> Result<(), crate::topology::protocol::ProtocolTopologyError> {
-        let nodes_map: HashMap<LspKey, Node> = nodes.drain(..)
-            .map(|node|  {
+        let nodes_map: HashMap<LspKey, Node> = nodes
+            .drain(..)
+            .map(|node| {
                 let key = match &node.info {
                     NodeInfo::Router(router) => {
                         if let Some(ProtocolData::IsIs(data)) = &router.protocol_data {
@@ -163,58 +176,79 @@ impl RoutingProtocol for JsonIsisBfsProtocol {
                 (key, node)
             })
             .collect();
-        
+
         let mut visited: HashSet<LspKey> = HashSet::new();
-        let (source_key, source_node) = nodes_map.iter().find(|(_, node)| {
-            if let NodeInfo::Router(router) = &node.info {
-                if let Some(ProtocolData::IsIs(data)) = &router.protocol_data {
-                    if let Some(owned) = data.owned {
-                        return owned;
+        let (source_key, source_node) = nodes_map
+            .iter()
+            .find(|(_, node)| {
+                if let NodeInfo::Router(router) = &node.info {
+                    if let Some(ProtocolData::IsIs(data)) = &router.protocol_data {
+                        if let Some(owned) = data.owned {
+                            return owned;
+                        }
                     }
                 }
-            }
-            false 
-        })
-        .map(|(key, node)| (key.clone(), node.clone()))
-        .ok_or(ProtocolTopologyError::Semantic("Missing source node".to_string()))?;
-        
+                false
+            })
+            .map(|(key, node)| (key.clone(), node.clone()))
+            .ok_or(ProtocolTopologyError::Semantic(
+                "Missing source node".to_string(),
+            ))?;
+
         let mut queue = VecDeque::new();
         visited.insert(source_key);
         queue.push_back(source_node);
-        
+
         while let Some(mut current_node) = queue.pop_front() {
-            
             let mut net_to_replace: Option<Network> = None;
-            
+
             // Query only extended IS/IP reachability for now (for simplicity)
-            
+
             match &current_node.info {
-                NodeInfo::Router(Router { protocol_data: Some(ProtocolData::IsIs(data)), .. }) => {
-                    if let Some(Tlv::ExtendedReachability(tlv)) = data.tlvs.iter()
-                        .find(|tlv| matches!(tlv, Tlv::ExtendedReachability(_))) {
-                            let neighbor_keys = tlv.neighbors.iter()
-                                .map(|neighbor| LspKey::new(neighbor.neighbor_id.clone(), neighbor.pseudonode_id));
-                            for neighbor_key in neighbor_keys {
-                                if visited.contains(&neighbor_key) {
-                                    continue;
-                                }
-                                let neighbor_node = nodes_map.get(&neighbor_key).ok_or(ProtocolTopologyError::Semantic(format!("Missing neighbor node {}", neighbor_key.system_id)))?;
-                                visited.insert(neighbor_key);
-                                queue.push_back(neighbor_node.clone());
+                NodeInfo::Router(Router {
+                    protocol_data: Some(ProtocolData::IsIs(data)),
+                    ..
+                }) => {
+                    if let Some(Tlv::ExtendedReachability(tlv)) = data
+                        .tlvs
+                        .iter()
+                        .find(|tlv| matches!(tlv, Tlv::ExtendedReachability(_)))
+                    {
+                        let neighbor_keys = tlv.neighbors.iter().map(|neighbor| {
+                            LspKey::new(neighbor.neighbor_id.clone(), neighbor.pseudonode_id)
+                        });
+                        for neighbor_key in neighbor_keys {
+                            if visited.contains(&neighbor_key) {
+                                continue;
                             }
+                            let neighbor_node = nodes_map.get(&neighbor_key).ok_or(
+                                ProtocolTopologyError::Semantic(format!(
+                                    "Missing neighbor node {}",
+                                    neighbor_key.system_id
+                                )),
+                            )?;
+                            visited.insert(neighbor_key);
+                            queue.push_back(neighbor_node.clone());
                         }
+                    }
                 }
                 NodeInfo::Network(net) => {
                     println!("Processing network node");
                     // For networks we have to do a bit more work since the pseudonode doesn't hold the network's prefix
                     let mut net = net.clone();
-                    let prefix_result = resolve_network_prefix(&current_node, &nodes_map.values().collect::<Vec<_>>());
+                    let prefix_result = resolve_network_prefix(
+                        &current_node,
+                        &nodes_map.values().collect::<Vec<_>>(),
+                    );
                     match prefix_result {
                         Ok(prefix) => {
                             println!("Prefix resolved: {}", &prefix);
                             net.ip_address = prefix;
                             // Recompute node's UUID since the network's prefix has changed
-                            current_node.id = Uuid::new_v5(&Uuid::NAMESPACE_OID, net.ip_address.to_string().as_bytes());
+                            current_node.id = Uuid::new_v5(
+                                &Uuid::NAMESPACE_OID,
+                                net.ip_address.to_string().as_bytes(),
+                            );
                         }
                         Err(e) => {
                             eprintln!(
@@ -223,11 +257,31 @@ impl RoutingProtocol for JsonIsisBfsProtocol {
                             );
                         }
                     }
-                    
-                    if let Some(ProtocolData::IsIs(IsIsData { is_level, lsp_id, net_address, tlvs, owned, .. })) = &net.protocol_data {
-                        if let Some(Tlv::ExtendedReachability(tlv)) = tlvs.iter().find(|tlv| matches!(tlv, Tlv::ExtendedReachability(_))) {
-                            let neighbor_keys: Vec<_> = tlv.neighbors.iter().map(|neighbor| LspKey::new(neighbor.neighbor_id.clone(), neighbor.pseudonode_id)).collect();
-                            
+
+                    if let Some(ProtocolData::IsIs(IsIsData {
+                        is_level,
+                        lsp_id,
+                        net_address,
+                        tlvs,
+                        owned,
+                        ..
+                    })) = &net.protocol_data
+                    {
+                        if let Some(Tlv::ExtendedReachability(tlv)) = tlvs
+                            .iter()
+                            .find(|tlv| matches!(tlv, Tlv::ExtendedReachability(_)))
+                        {
+                            let neighbor_keys: Vec<_> = tlv
+                                .neighbors
+                                .iter()
+                                .map(|neighbor| {
+                                    LspKey::new(
+                                        neighbor.neighbor_id.clone(),
+                                        neighbor.pseudonode_id,
+                                    )
+                                })
+                                .collect();
+
                             let neighbor_system_ids: Vec<SystemId> = neighbor_keys.iter()
                                 .filter_map(|key| {
                                     if let Some(neighbor_node @ Node { 
@@ -258,31 +312,33 @@ impl RoutingProtocol for JsonIsisBfsProtocol {
                                     }
                                     None
                                 }).collect();
-                            
-                            net.attached_routers = neighbor_system_ids.into_iter()
+
+                            net.attached_routers = neighbor_system_ids
+                                .into_iter()
                                 .map(|sid| RouterId::IsIs(sid))
                                 .collect();
                         }
                     }
-                    
+
                     net_to_replace = Some(net);
                 }
                 _ => {
-                    println!("[WARN] ISIS_BFS_post_process: Unknown node type\n{:?}", current_node);
+                    println!(
+                        "[WARN] ISIS_BFS_post_process: Unknown node type\n{:?}",
+                        current_node
+                    );
                 }
             }
-            
+
             if let Some(net) = net_to_replace {
                 current_node.info = NodeInfo::Network(net);
             }
             nodes.push(current_node);
         }
-        
+
         Ok(())
     }
 }
-
-
 
 fn find_dis_router(network_lsp_id: &LspId, router_nodes: &[&Node]) -> Option<Router> {
     router_nodes.iter().find_map(|node| {
@@ -727,15 +783,14 @@ mod tests {
 
         println!("Parsed ISIS network: {:#?}", parsed);
     }
-    
+
     #[test]
     fn test_key() {
         let key1 = LspKey::new(SystemId::new(&[0, 0, 0, 0, 0, 5]).unwrap(), 18);
         let key2 = LspKey::new(SystemId::new(&[0, 0, 0, 0, 0, 5]).unwrap(), 19);
         let key3 = LspKey::new(SystemId::new(&[0, 0, 0, 0, 0, 5]).unwrap(), 18);
-        
+
         assert_eq!(key1, key3);
         assert_ne!(key1, key2);
-        
     }
 }
