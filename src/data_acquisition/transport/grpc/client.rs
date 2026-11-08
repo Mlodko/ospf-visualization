@@ -1,20 +1,10 @@
-use std::pin::Pin;
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc, time::Duration};
 
 use bytes::Bytes;
-use futures_util::{Stream, stream};
+use futures_util::Stream;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use tonic::metadata::MetadataValue;
-use tonic::service::interceptor::InterceptedService;
-use tonic::transport::{ClientTlsConfig, Endpoint};
-
-pub mod gnmi_ext {
-    tonic::include_proto!("gnmi_ext");
-}
-
-pub mod gnmi {
-    tonic::include_proto!("gnmi");
-}
+use tonic::{metadata::MetadataValue, service::interceptor::InterceptedService, transport::{ClientTlsConfig, Endpoint}};
+use super::{gnmi, types::*, path::parse_path};
 
 #[derive(Debug)]
 struct NoTlsVerifier;
@@ -81,20 +71,6 @@ pub struct GnmiClient {
     client: gnmi::g_nmi_client::GNmiClient<
         InterceptedService<tonic::transport::Channel, GnmiAuthInterceptor>,
     >,
-}
-
-#[derive(Debug, Clone)]
-pub struct GnmiModel {
-    pub name: String,
-    pub organization: String,
-    pub version: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct GnmiCapabilities {
-    pub models: Vec<GnmiModel>,
-    pub encodings: Vec<String>,
-    pub gnmi_version: String,
 }
 
 pub type GnmiSubscription =
@@ -174,25 +150,25 @@ impl GnmiClient {
         Ok(self.client.get(request).await?.into_inner())
     }
 
-    pub async fn subscribe(&mut self, paths: &[&str]) -> Result<GnmiSubscription, tonic::Status> {
-        self.subscribe_with_models(paths, &[]).await
-    }
-
-    pub async fn subscribe_with_models(
+    pub async fn subscribe(
         &mut self,
-        paths: &[&str],
-        models: &[GnmiModel],
+        config: &GnmiSubscriptionConfig,
     ) -> Result<GnmiSubscription, tonic::Status> {
+        let mode: gnmi::SubscriptionMode = config.mode().into();
         let request = gnmi::SubscribeRequest {
             request: Some(gnmi::subscribe_request::Request::Subscribe(
                 gnmi::SubscriptionList {
-                    subscription: paths
+                    subscription: config
+                        .paths()
                         .iter()
                         .map(|path| gnmi::Subscription {
                             path: Some(parse_path(path)),
-                            mode: gnmi::SubscriptionMode::Sample as i32,
-                            sample_interval: 0,
-                            heartbeat_interval: 0,
+                            mode: mode as i32,
+                            sample_interval: config.mode().sample_interval_nanos().unwrap_or(0),
+                            heartbeat_interval: config
+                                .mode()
+                                .heartbeat_interval_nanos()
+                                .unwrap_or(0),
                             suppress_redundant: false,
                         })
                         .collect(),
@@ -201,7 +177,7 @@ impl GnmiClient {
                     prefix: None,
                     qos: None,
                     allow_aggregation: false,
-                    use_models: models.iter().cloned().map(Into::into).collect(),
+                    use_models: config.models().iter().cloned().map(Into::into).collect(),
                     updates_only: false,
                 },
             )),
@@ -209,65 +185,19 @@ impl GnmiClient {
         };
         let response = self
             .client
-            .subscribe(stream::once(std::future::ready(request)))
+            .subscribe(futures_util::stream::once(std::future::ready(request)))
             .await?;
         Ok(Box::pin(response.into_inner()))
     }
 }
 
-impl From<GnmiModel> for gnmi::ModelData {
-    fn from(model: GnmiModel) -> Self {
-        Self {
-            name: model.name,
-            organization: model.organization,
-            version: model.version,
-        }
-    }
-}
 
-fn parse_path(path: &str) -> gnmi::Path {
-    gnmi::Path {
-        elem: path
-            .trim_start_matches('/')
-            .split('/')
-            .filter(|element| !element.is_empty())
-            .map(parse_path_element)
-            .collect(),
-        element: vec![],
-        origin: String::new(),
-        target: String::new(),
-    }
-}
-
-fn parse_path_element(element: &str) -> gnmi::PathElem {
-    let (name, predicates) = element
-        .split_once('[')
-        .map_or((element, ""), |(name, predicates)| (name, predicates));
-    let mut key = std::collections::HashMap::new();
-
-    for predicate in predicates
-        .split(']')
-        .map(|part| part.trim_start_matches('['))
-    {
-        if predicate.is_empty() {
-            continue;
-        }
-        if let Some((key_name, value)) = predicate.split_once('=') {
-            key.insert(key_name.to_owned(), value.to_owned());
-        }
-    }
-
-    gnmi::PathElem {
-        name: name.to_owned(),
-        key,
-    }
-}
 
 mod tests {
-    use crate::data_acquisition::transport::grpc::gnmi::typed_value::Value::JsonIetfVal;
-
+    use futures_util::StreamExt;
+use tokio::{runtime::Runtime, time::Instant};
     use super::*;
-    use tokio::runtime::Runtime;
+
 
     #[test]
     fn test_gnmi_client() {
@@ -299,9 +229,10 @@ mod tests {
                 .value
                 .as_ref()
                 .unwrap();
-            if let JsonIetfVal(json) = json_raw {
-                println!("JSON IETF Value: {}", String::from_utf8_lossy(json));
-            }
+            let json_ietf = JsonIetf::try_from(json_raw.clone()).unwrap();
+            println!("JSON IETF: {}", &json_ietf);
+            let json_value: serde_json::Value = serde_json::Value::try_from(&json_ietf).unwrap();
+            println!("JSON Value: {}", serde_json::to_string_pretty(&json_value).unwrap());
         })
     }
 
@@ -315,5 +246,60 @@ mod tests {
         assert_eq!(path.elem[0].key["name"], "default");
         assert_eq!(path.elem[3].key["name"], "1");
         assert_eq!(path.elem[4].key["level-number"], "*");
+    }
+
+    #[test]
+    fn parses_escaped_slashes_in_keys() {
+        let path = parse_path("/interface[name=ethernet-1\\/1]/statistics/in-packets");
+
+        assert_eq!(path.elem.len(), 3);
+        assert_eq!(path.elem[0].name, "interface");
+        assert_eq!(path.elem[0].key["name"], "ethernet-1/1");
+    }
+
+    #[test]
+    fn test_gnmi_subscribe() {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let mut client = GnmiClient::new("http://200.1.0.1:57401", "admin", "NokiaSrl1!")
+                .await
+                .unwrap();
+            let paths = vec![
+                "/interface[name=ethernet-1\\/1]/statistics/in-packets".to_string(),
+                "/interface[name=ethernet-1\\/1]/statistics/out-packets".to_string(),
+            ];
+
+            dbg!(parse_path(&paths[0]));
+
+            let config = GnmiSubscriptionConfig::new(
+                paths,
+                GnmiSubscriptionModeConfig::Sample {
+                    sample_interval: Duration::from_secs(2),
+                    heartbeat_interval: Duration::ZERO,
+                },
+                vec![],
+            );
+            let mut subscription = client.subscribe(&config).await.unwrap();
+
+            let expected_messages = 6;
+            let mut messages = 0;
+            let deadline = Instant::now() + Duration::from_secs(11);
+            while let Ok(Some(response)) =
+                tokio::time::timeout_at(deadline, subscription.next()).await
+            {
+                println!("Subscription message: {:?}", response);
+                match response.unwrap().response {
+                    Some(gnmi::subscribe_response::Response::Update(_)) => messages += 1,
+                    Some(gnmi::subscribe_response::Response::Error(error)) => {
+                        panic!("subscription returned an error: {}", error.message)
+                    }
+                    Some(gnmi::subscribe_response::Response::SyncResponse(_)) | None => {}
+                }
+            }
+            assert_eq!(
+                messages, expected_messages,
+                "expected an initial update plus five 2-second samples"
+            );
+        });
     }
 }
