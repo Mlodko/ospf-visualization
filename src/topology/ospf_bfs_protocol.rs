@@ -9,10 +9,10 @@ use ospf_parser::{OspfLinkStateAdvertisement, OspfRouterLinkType};
 use crate::{
     network::{
         node::{
-            Network, Node, NodeInfo, OspfData, OspfPayload, OspfVirtualLink, PerAreaRouterFacet,
+            Network, Node, NodeInfo, OspfPayload, OspfVirtualLink, PerAreaRouterFacet,
             ProtocolData,
         },
-        router::{Router, RouterId},
+        router::RouterId,
     },
     parsers::ospf_parser::{
         lsa::{LsaError, OspfLsdbEntry},
@@ -387,7 +387,7 @@ impl RoutingProtocol for OspfBfsProtocol {
                                             }
                                         }
 
-                                        NodeInfo::Router(router) => {
+                                        NodeInfo::Router(_router) => {
                                             todo!() // No ASBRs for now
                                         }
                                     }
@@ -467,7 +467,7 @@ impl OspfBfsProtocol {
             }
         }
 
-        for (id, mut nodes) in router_by_id_map {
+        for (_id, mut nodes) in router_by_id_map {
             /*
              * Some rules for consolidation:
              * 1. [x] Prefer area_id == 0.0.0.0, this goes for the UUID as well. You can read it from OspfData.
@@ -807,7 +807,7 @@ impl OspfBfsProtocol {
                                 }
                             }
                         }
-                        (OspfPayload::SummaryNetwork(base), OspfPayload::Network(other)) => {
+                        (OspfPayload::SummaryNetwork(_base), OspfPayload::Network(_other)) => {
                             unreachable!(
                                 "If the base payload is a summary network, the other payload should be a summary network as well."
                             )

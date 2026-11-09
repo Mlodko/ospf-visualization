@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{pin::Pin, sync::Arc};
 
 use super::{gnmi, path::parse_path, types::*};
 use bytes::Bytes;
@@ -16,29 +16,29 @@ struct NoTlsVerifier;
 impl ServerCertVerifier for NoTlsVerifier {
     fn verify_server_cert(
         &self,
-        end_entity: &tonic::transport::CertificateDer<'_>,
-        intermediates: &[tonic::transport::CertificateDer<'_>],
-        server_name: &rustls::pki_types::ServerName<'_>,
-        ocsp_response: &[u8],
-        now: rustls::pki_types::UnixTime,
+        _end_entity: &tonic::transport::CertificateDer<'_>,
+        _intermediates: &[tonic::transport::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         Ok(ServerCertVerified::assertion())
     }
 
     fn verify_tls12_signature(
         &self,
-        message: &[u8],
-        cert: &tonic::transport::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &tonic::transport::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(HandshakeSignatureValid::assertion())
     }
 
     fn verify_tls13_signature(
         &self,
-        message: &[u8],
-        cert: &tonic::transport::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &tonic::transport::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(HandshakeSignatureValid::assertion())
     }
@@ -196,12 +196,18 @@ impl GnmiClient {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
     use futures_util::StreamExt;
+    use std::time::Duration;
     use tokio::{runtime::Runtime, time::Instant};
 
     #[test]
+    #[cfg_attr(
+        not(feature = "live-gnmi-tests"),
+        ignore = "requires --features live-gnmi-tests and a live gNMI endpoint"
+    )]
     fn test_gnmi_client() {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
@@ -214,6 +220,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "live-gnmi-tests"),
+        ignore = "requires --features live-gnmi-tests and a live gNMI endpoint"
+    )]
     fn test_gnmi_get() {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
@@ -259,6 +269,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "live-gnmi-tests"),
+        ignore = "requires --features live-gnmi-tests and a live gNMI endpoint"
+    )]
     fn test_gnmi_subscribe() {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {

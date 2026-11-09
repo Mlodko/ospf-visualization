@@ -1,10 +1,10 @@
-use crate::gui::new_app::{AppPanel, ThemeId};
+use crate::gui::new_app::ThemeId;
 
 pub struct ThemeSelect;
 
 impl ThemeSelect {
     pub fn ui(
-        ctx: &egui::Context,
+        _ctx: &egui::Context,
         ui: &mut egui::Ui,
         actions: &mut dyn crate::gui::actions::AppActions,
     ) {

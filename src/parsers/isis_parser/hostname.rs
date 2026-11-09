@@ -143,6 +143,7 @@ impl HostnameMap {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -5,8 +5,8 @@ use crate::data_acquisition::transport::grpc::prelude::{
 };
 use crate::{
     adapters::{
-        packets::isis::{self, Tlv},
         RoutingMessage, RoutingProtocol, VendorAdapter,
+        packets::isis::{self, Tlv},
     },
     data_acquisition::{TransportPayload, TransportProtocol},
 };
@@ -563,6 +563,7 @@ impl From<NokiaRouterCapabilities> for isis::RouterCapabilityTlv {
     }
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
     use crate::{
@@ -579,9 +580,11 @@ mod test {
         let lsps = NokiaGnmiIsisAdapter::lsp_json_to_lsp(json).unwrap();
 
         assert!(!lsps.is_empty());
-        assert!(lsps
-            .iter()
-            .all(|lsp| { matches!(lsp.is_level, isis::IsLevel::Level1 | isis::IsLevel::Level2) }));
+        assert!(
+            lsps.iter().all(|lsp| {
+                matches!(lsp.is_level, isis::IsLevel::Level1 | isis::IsLevel::Level2)
+            })
+        );
     }
 
     #[test]
@@ -612,7 +615,10 @@ mod test {
         assert!(has_isis_data);
     }
 
-    #[ignore = "requires a reachable SR Linux gNMI lab"]
+    #[cfg_attr(
+        not(feature = "live-gnmi-tests"),
+        ignore = "requires --features live-gnmi-tests and a reachable SR Linux gNMI lab"
+    )]
     #[test]
     fn test_nokia_gnmi_isis_adapter() {
         let adapter = super::NokiaGnmiIsisAdapter;
@@ -633,9 +639,11 @@ mod test {
                 .unwrap();
 
             assert!(!messages.is_empty());
-            assert!(messages
-                .iter()
-                .all(|message| matches!(message, RoutingMessage::IsIs(_))));
+            assert!(
+                messages
+                    .iter()
+                    .all(|message| matches!(message, RoutingMessage::IsIs(_)))
+            );
 
             dbg!(&messages);
         });

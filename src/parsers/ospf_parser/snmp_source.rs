@@ -1,7 +1,6 @@
 use std::{collections::HashMap, net::Ipv4Addr, str::FromStr};
 
 use async_trait::async_trait;
-use egui::Link;
 use snmp2::Oid;
 
 use crate::parsers::ospf_parser::source::{OspfDataSource, OspfRawRow, OspfSourceError};
@@ -13,14 +12,18 @@ use crate::{
     network::router::{InterfaceStats, RouterId},
 };
 
-/// OSPF-over-SNMP adapter that implements the protocol-centric OspfDataSource.
-/// This maps SNMP table rows from the OSPF LSDB MIB into transport-neutral OspfRawRow.
+/// Deprecated OSPF-over-SNMP adapter implementing the protocol-centric OspfDataSource.
+///
+/// This remains available for standardized OSPF-MIB consumers. New application
+/// integrations should use the gNMI adapter instead.
 
+#[deprecated(note = "use the Nokia gNMI OSPF adapter for new integrations")]
 pub struct OspfSnmpSource {
     client: SnmpClient,
 }
 
 impl OspfSnmpSource {
+    #[allow(deprecated)]
     pub fn new(client: SnmpClient) -> Self {
         Self { client }
     }
@@ -438,12 +441,17 @@ impl OspfDataSource for OspfSnmpSource {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
 
     use super::*;
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_fetch_stats() {
         let client = SnmpClient::new(
             "127.0.0.1:1161".parse().unwrap(),

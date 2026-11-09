@@ -132,6 +132,7 @@ impl SshClient {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -145,6 +146,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-ssh-tests"),
+        ignore = "requires --features live-ssh-tests and an SSH test server on localhost:2221"
+    )]
     async fn test_connect() {
         let mut client = new_r1_client();
         let res = client.connect().await;
@@ -155,6 +160,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-ssh-tests"),
+        ignore = "requires --features live-ssh-tests and an SSH test server on localhost:2221"
+    )]
     async fn test_execute_command() {
         let mut client = new_r1_client();
         let res = client.connect().await;

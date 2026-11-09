@@ -1,8 +1,8 @@
 use egui::{
-    Area, Button, Frame, Image, ImageButton, Layout, Margin, Order, Pos2, Sense, Stroke, Vec2,
+    Area, Button, Frame, Image, Margin, Order, Pos2, Sense, Stroke, Vec2,
 };
 
-use crate::gui::{actions::AppActions, new_app::AppPanel};
+use crate::gui::actions::AppActions;
 
 const BUTTON_SIZE: f32 = 36.0;
 const SPACING: f32 = 6.0;

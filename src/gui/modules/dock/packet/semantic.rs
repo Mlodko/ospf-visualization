@@ -26,8 +26,8 @@ impl DockPanel for SemanticPacketInspector {
     fn ui(
         &mut self,
         ui: &mut egui::Ui,
-        actions: &mut dyn crate::gui::actions::AppActions,
-        dock_actions: &mut dyn DockActions,
+        _actions: &mut dyn crate::gui::actions::AppActions,
+        _dock_actions: &mut dyn DockActions,
     ) {
         let packet = {
             let state = self.state.lock().unwrap();

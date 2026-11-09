@@ -1,17 +1,12 @@
 use crate::{
-    data_acquisition::transport::{grpc::client::GnmiClient, snmp::SnmpClient, ssh::SshClient},
+    data_acquisition::transport::{grpc::client::GnmiClient, snmp::SnmpClient},
     gui::new_app::AppPanel,
     network::{
         node::Node,
         router::{InterfaceStats, RouterId},
     },
-    parsers::isis_parser::topology::{IsIsBfsTopology, IsIsTopology},
-    topology::{
-        ospf_protocol::OspfBfsSnmpTopology, source::SnapshotSource, NokiaGnmiOspfTopology,
-        OspfSnmpTopology,
-    },
+    topology::{NokiaGnmiOspfTopology, ospf_protocol::OspfBfsSnmpTopology, source::SnapshotSource},
 };
-use anyhow::anyhow;
 use egui::CollapsingHeader;
 use std::{
     collections::HashMap,
@@ -45,14 +40,14 @@ pub struct AutoPoller {
 impl AppPanel for AutoPoller {
     fn ui(
         &mut self,
-        ctx: &egui::Context,
+        _ctx: &egui::Context,
         ui: &mut egui::Ui,
-        actions: &mut dyn super::actions::AppActions,
+        _actions: &mut dyn super::actions::AppActions,
     ) {
         CollapsingHeader::new("Auto Poller").show(ui, |ui| {
             if ui.button("Print sources").clicked() {
                 println!("Sources:");
-                for (id, spec) in &self.source_specs {
+                for (id, _spec) in &self.source_specs {
                     println!(" - {}", id);
                 }
             }
@@ -337,25 +332,24 @@ pub enum ProtocolKind {
 
 #[derive(Clone)]
 pub enum AcquisitionConfig {
+    /// Deprecated compatibility path for standardized OSPF-MIB deployments.
+    #[deprecated(note = "use AcquisitionConfig::Gnmi for new sources")]
     Snmp(SnmpAcquisitionConfig),
-    Ssh(SshAcquisitionConfig),
+    /// Primary acquisition path for supported protocols.
     Gnmi(GnmiAcquisitionConfig),
 }
 
 #[derive(Clone)]
+/// Deprecated configuration for OSPF acquisition over SNMP.
+///
+/// Retained for standardized OSPF-MIB compatibility; new sources should use
+/// [`GnmiAcquisitionConfig`].
+#[deprecated(note = "use GnmiAcquisitionConfig for new sources")]
 pub struct SnmpAcquisitionConfig {
     address: SocketAddr,
     community: String,
     snmp_version: snmp2::Version,
     security: Option<snmp2::v3::Security>,
-}
-
-#[derive(Clone)]
-pub struct SshAcquisitionConfig {
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub password: String,
 }
 
 #[derive(Clone)]
@@ -374,24 +368,11 @@ pub struct SourceSpec {
 }
 
 impl SourceSpec {
-    pub fn new_ssh(
-        host: String,
-        port: u16,
-        username: String,
-        password: String,
-        protocol: ProtocolKind,
-    ) -> Self {
-        Self {
-            protocol,
-            acquisition: AcquisitionConfig::Ssh(SshAcquisitionConfig {
-                host,
-                port,
-                username,
-                password,
-            }),
-        }
-    }
-
+    /// Builds a deprecated compatibility OSPF source using SNMP.
+    ///
+    /// New sources should use [`Self::new_gnmi`] instead.
+    #[deprecated(note = "use SourceSpec::new_gnmi for new sources")]
+    #[allow(deprecated)]
     pub fn new_snmp(
         address: SocketAddr,
         community: String,
@@ -410,6 +391,7 @@ impl SourceSpec {
         }
     }
 
+    /// Builds the primary gNMI-backed source configuration.
     pub fn new_gnmi(
         uri: String,
         username: String,
@@ -430,6 +412,7 @@ impl SourceSpec {
         }
     }
 
+    #[allow(deprecated)]
     pub async fn build_topology(&self) -> Result<Box<dyn SnapshotSource>, String> {
         match (&self.protocol, &self.acquisition) {
             (ProtocolKind::Ospf, AcquisitionConfig::Snmp(config)) => {
@@ -467,18 +450,6 @@ impl SourceSpec {
                         config.source_id.clone(),
                         config.interface_stats.clone(),
                     );
-                Ok(Box::new(topo))
-            }
-            (ProtocolKind::Isis, AcquisitionConfig::Ssh(config)) => {
-                let client = SshClient::new_with_password(
-                    config.username.clone(),
-                    config.host.clone(),
-                    config.password.clone(),
-                    config.port,
-                );
-                let topo = IsIsBfsTopology::new_from_ssh_client(client)
-                    .await
-                    .map_err(|e| format!("Failed to build ISIS topology: {}", e))?;
                 Ok(Box::new(topo))
             }
             _ => Err("Unsupported protocol or acquisition method".to_string()),

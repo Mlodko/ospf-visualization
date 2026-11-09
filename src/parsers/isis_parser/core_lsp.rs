@@ -376,7 +376,7 @@ impl LspId {
         SystemId::new(&self.raw_id[0..6])
     }
 
-    /// Returns the pseudonode ID (7th byte) from the LSP ID.    
+    /// Returns the pseudonode ID (7th byte) from the LSP ID.
     #[allow(dead_code)]
     pub fn get_pseudonode_id(&self) -> u8 {
         self.raw_id[6]
@@ -582,6 +582,7 @@ impl Display for IsLevel {
     }
 }
 
+#[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
     use super::*;

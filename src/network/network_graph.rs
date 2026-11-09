@@ -6,12 +6,12 @@ use std::{
 use eframe::egui::Color32;
 use egui::Pos2;
 use egui_graphs::Graph;
-use petgraph::{csr::DefaultIx, graph::NodeIndex, prelude::StableGraph, visit::EdgeRef, Directed};
+use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex, prelude::StableGraph, visit::EdgeRef};
 use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    gui::{app, edge_shape::NetworkGraphEdgeShape, node_shape::NetworkGraphNodeShape},
+    gui::{edge_shape::NetworkGraphEdgeShape, node_shape::NetworkGraphNodeShape},
     network::{
         edge::{Edge, EdgeKind, EdgeMetric, ManualEdgeSpec, UndirectedEdgeKey},
         node::{IsIsData, Node, NodeInfo, OspfData, OspfPayload, ProtocolData},
@@ -206,8 +206,6 @@ impl NetworkGraph {
                     NodeInfo::Router(_) => "Router".to_string(),
                 }
             };
-            let theme = app::get_theme();
-
             // Set label; color will be derived by NetworkGraphNodeShape via theme visuals
             node.set_label(label);
         }
@@ -281,7 +279,7 @@ impl NetworkGraph {
                     let router_color = Color32::BLUE;
                     let network_color = Color32::GREEN;
                     let inter_area_color = Color32::LIGHT_GREEN;
-                    let node_color = if desired.is_inter_area() {
+                    let _node_color = if desired.is_inter_area() {
                         inter_area_color
                     } else {
                         match &desired.info {
@@ -307,7 +305,7 @@ impl NetworkGraph {
                     let router_color = Color32::BLUE;
                     let network_color = Color32::GREEN;
                     let inter_area_color = Color32::LIGHT_GREEN;
-                    let node_color = if payload.is_inter_area() {
+                    let _node_color = if payload.is_inter_area() {
                         inter_area_color
                     } else {
                         match &payload.info {
@@ -615,7 +613,7 @@ impl NetworkGraph {
         eprintln!("{log_tag} materialized {added} edges");
     }
 
-    fn membership_metric(&self, src_idx: NodeIndex, src_uuid: Uuid, dst_uuid: Uuid) -> EdgeMetric {
+    fn membership_metric(&self, src_idx: NodeIndex, _src_uuid: Uuid, dst_uuid: Uuid) -> EdgeMetric {
         let src_node = match self.graph.node(src_idx) {
             Some(n) => n.payload(),
             None => return EdgeMetric::None,
@@ -695,10 +693,10 @@ impl NetworkGraph {
 
     fn ospf_logical_reachability_metric(
         &self,
-        src_idx: NodeIndex,
+        _src_idx: NodeIndex,
         src_uuid: Uuid,
-        dst_uuid: Uuid,
-        ospf_data: &OspfData,
+        _dst_uuid: Uuid,
+        _ospf_data: &OspfData,
         src_router: &Router,
     ) -> EdgeMetric {
         let dst_idx = match self.node_id_to_index_map.get(&src_uuid) {

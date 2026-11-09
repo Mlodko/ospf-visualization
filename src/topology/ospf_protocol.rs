@@ -16,9 +16,8 @@ use crate::{
     topology::{
         ospf_bfs_protocol::OspfBfsProtocol,
         protocol::{
-            AcquisitionError, AcquisitionSource, FederationError, ProtocolFederator,
-            ProtocolParseError, ProtocolTopologyError, RoutingMessageProtocol,
-            RoutingMessageTopology,
+            AcquisitionError, FederationError, ProtocolFederator, ProtocolParseError,
+            ProtocolTopologyError, RoutingMessageProtocol,
         },
         routing_source::GnmiRoutingMessageSource,
     },
@@ -354,12 +353,17 @@ need similar patterns (e.g., summary/detailed merging), factor them into a share
 `topology::algorithms` module later.
 ----------------------------------------------------------------------------------- */
 
-/// OSPF-over-SNMP acquisition wrapper implementing the generic AcquisitionSource for OspfProtocol.
+/// Deprecated OSPF-over-SNMP acquisition wrapper.
+///
+/// Retained for standardized OSPF-MIB compatibility; new integrations should
+/// use the gNMI topology.
+#[deprecated(note = "use NokiaGnmiOspfTopology for new integrations")]
 pub struct OspfSnmpAcquisition {
     inner: crate::parsers::ospf_parser::snmp_source::OspfSnmpSource,
 }
 
 impl OspfSnmpAcquisition {
+    #[allow(deprecated)]
     pub fn new(client: crate::data_acquisition::transport::snmp::SnmpClient) -> Self {
         Self {
             inner: crate::parsers::ospf_parser::snmp_source::OspfSnmpSource::new(client),
@@ -444,17 +448,23 @@ impl super::protocol::AcquisitionSource<OspfBfsProtocol> for OspfSnmpAcquisition
 }
 
 /// Convenience alias matching previous API style.
-#[deprecated]
+#[deprecated(note = "use NokiaGnmiOspfTopology for new integrations")]
 pub type OspfSnmpTopology = super::protocol::Topology<OspfProtocol, OspfSnmpAcquisition>;
 
+#[allow(deprecated)]
 impl OspfSnmpTopology {
     pub fn from_snmp_client(client: SnmpClient) -> Self {
         Self::new(OspfProtocol, OspfSnmpAcquisition::new(client))
     }
 }
 
+/// Compatibility OSPF topology backed by SNMP.
+///
+/// New OSPF integrations should use [`NokiaGnmiOspfTopology`] instead.
+#[deprecated(note = "use NokiaGnmiOspfTopology for new integrations")]
 pub type OspfBfsSnmpTopology = super::protocol::Topology<OspfBfsProtocol, OspfSnmpAcquisition>;
 
+#[allow(deprecated)]
 impl OspfBfsSnmpTopology {
     pub async fn from_snmp_client(client: SnmpClient) -> anyhow::Result<Self> {
         let mut acquisition = OspfSnmpAcquisition::new(client);
@@ -751,7 +761,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        adapters::{packets::ospf::lsa::Lsa, RoutingMessage},
+        adapters::{RoutingMessage, packets::ospf::lsa::Lsa},
+        topology::protocol::RoutingMessageTopology,
         topology::source::{RoutingMessageSource, SnapshotSource, TopologySource},
     };
 

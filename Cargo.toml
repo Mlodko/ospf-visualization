@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2024"
 build = "src/build.rs"
 
+[features]
+default = []
+live-gnmi-tests = []
+live-snmp-tests = []
+live-ssh-tests = []
+
 [dependencies]
 eframe = "0.33.0"
 egui_graphs = "0.29.0"

@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn test_parse_lsa() {
         let lsa: [u8; 24] = [
-            100, 1, 0, 2, 100, 1, 0, 1, 128, 0, 0, 5, 39, 83, 0, 28, 0, 0, 0, 0, 0, 0, 0, 16,
+            100, 1, 0, 2, 100, 1, 0, 1, 128, 0, 0, 5, 39, 83, 0, 28, 0, 0, 0, 24, 0, 0, 0, 16,
         ];
         let (rest, parsed_lsa) = Lsa::parse(&lsa).expect("Failed to parse LSA");
         assert!(

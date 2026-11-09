@@ -12,7 +12,6 @@ and encapsulate how they obtain and parse data.
 use std::fmt::Display;
 
 use async_trait::async_trait;
-use egui::epaint::stats;
 
 use crate::network::{
     node::Node,

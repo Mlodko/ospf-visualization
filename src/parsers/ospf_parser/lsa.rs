@@ -1,7 +1,7 @@
 use crate::{
     adapters::packets::ospf::lsa::Lsa as CanonicalLsa,
     network::node::{
-        Node, NodeInfo, OspfAdvertisement, OspfData, OspfPayload, OspfRouterPayload,
+        Node, NodeInfo, OspfAdvertisement, OspfData, OspfRouterPayload,
         OspfVirtualLink, PerAreaRouterFacet, ProtocolData,
     },
     parsers::ospf_parser::source::OspfRawRow,
@@ -395,6 +395,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_parse_lsas_to_lsdb_entries() {
         let client = SnmpClient::new(
             "127.0.0.1:1161".parse().unwrap(),
@@ -424,6 +428,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_parse_to_nodes() {
         let client = SnmpClient::new(
             "127.0.0.1:1161".parse().unwrap(),

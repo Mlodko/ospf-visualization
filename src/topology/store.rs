@@ -21,7 +21,6 @@ use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    fmt::{Display, Formatter},
     net::IpAddr,
     time::SystemTime,
 };
@@ -82,6 +81,7 @@ pub struct SourceState {
     pub last_snapshot: SystemTime, // when we last replaced the snapshot successfully
     pub last_connected: SystemTime, // when acquisition last succeeded
     pub last_status_change: SystemTime, // when health last changed
+    #[serde(default)]
     pub interface_stats: Vec<InterfaceStats>,
 }
 impl SourceState {
@@ -379,6 +379,7 @@ impl TopologyStore {
     }
 }
 
+#[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
     use std::net::Ipv4Addr;

@@ -30,7 +30,7 @@ pub fn get_anim(src: Uuid, dst: Uuid, kind: EdgeKind) -> Option<EdgeAnimation> {
 }
 
 pub fn cleanup_finished(total: std::time::Duration) {
-    let now = Instant::now();
+    let _now = Instant::now();
     EDGE_ANIMS.with(|m| {
         m.borrow_mut().retain(|_, anim| {
             let done = match anim.phase {

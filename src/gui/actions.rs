@@ -1,11 +1,10 @@
-use std::{collections::HashMap, time::SystemTime};
+use std::time::SystemTime;
 
-use catppuccin_egui::Theme;
 use petgraph::graph::NodeIndex;
 use uuid::Uuid;
 
 use crate::{
-    gui::{modules::graph::GraphWidget, new_app::ThemeId, tools::tray::ToolId},
+    gui::{new_app::ThemeId, tools::tray::ToolId},
     network::{edge::Edge, network_graph::NetworkGraph, node::Node, router::InterfaceStats},
     topology::store::{SourceHealth, SourceId},
 };
@@ -47,27 +46,8 @@ pub struct SourceSummary {
 }
 
 pub trait ConnectActions {
-    fn ssh_connect_status(&self) -> &ConnectStatus;
-    fn clear_ssh_connect_status(&mut self);
-    fn snmp_connect_status(&self) -> &ConnectStatus;
-    fn clear_snmp_connect_status(&mut self);
     fn gnmi_connect_status(&self) -> &ConnectStatus;
     fn clear_gnmi_connect_status(&mut self);
-    fn connect_ssh(
-        &mut self,
-        host: String,
-        port: u16,
-        username: String,
-        password: String,
-        clear_other_sources: bool,
-    );
-    fn connect_snmp(
-        &mut self,
-        host: String,
-        port: u16,
-        community: String,
-        clear_other_sources: bool,
-    );
     fn connect_gnmi(
         &mut self,
         uri: String,

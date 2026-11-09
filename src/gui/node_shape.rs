@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use egui::TextureHandle;
 
-use crate::gui::app;
+use crate::gui::new_app;
 use crate::network::node::{Node, NodeInfo};
 use crate::network::router::RouterId;
 
@@ -184,7 +184,7 @@ impl From<NodeProps<Node>> for NetworkGraphNodeShape {
             node_uuid: payload.id,
             node_router_id: router_id,
             node_type: NodeType::from(&payload.info),
-            theme: app::get_theme(),
+            theme: new_app::get_theme().theme(),
         }
     }
 }
@@ -351,7 +351,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Node, E, Ty, Ix> for Net
         self.label = state.label.to_string();
         self.color = state.color();
         self.source_id = state.payload.source_id.clone();
-        self.theme = app::get_theme();
+        self.theme = new_app::get_theme().theme();
 
         // If highlighting is enabled and this node is hovered, publish its partition (SourceId) for frame-wide highlight
     }
@@ -415,7 +415,7 @@ impl NetworkGraphNodeShape {
 
         let base_color = ctx.ctx.style().visuals.widgets.inactive.fg_stroke.color;
         let color = base_color.gamma_multiply(0.6);
-        let stroke = Stroke::new(1.5, color);
+        let stroke = Stroke::new(1.5_f32, color);
 
         // Change this later to animate the line
         let dash_offset = preview.dash_phase();

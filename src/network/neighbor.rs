@@ -60,7 +60,7 @@ impl Neighbor<OspfProtocol> for OspfNeighbor {
         self
     }
 
-    fn render_row(&self, ui: &mut Ui) {
+    fn render_row(&self, _ui: &mut Ui) {
         todo!()
     }
 }

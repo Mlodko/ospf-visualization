@@ -1,6 +1,5 @@
 use std::net::Ipv4Addr;
 
-use anyhow::anyhow;
 use egui::{CollapsingHeader, Response, WidgetText};
 
 use crate::{
@@ -15,11 +14,7 @@ use crate::{
         },
         span::Span,
     },
-    gui::{
-        actions::AppActions,
-        modules::dock::packet::state::{Packet, PacketInspectorState},
-    },
-    network::node::{Node, NodeInfo},
+    gui::modules::dock::packet::state::Packet,
     parsers::isis_parser::core_lsp::{
         AreaAddressesTlv, ExtendedIpReachabilityTlv, IpReachabilityTlv, IsExtendedReachabilityTlv,
         IsReachabilityTlv, Lsp, RouterCapabilityTlv, Tlv,
@@ -544,7 +539,7 @@ impl SemanticUi for Tlv {
 }
 
 impl SemanticUi for AreaAddressesTlv {
-    fn ui_semantic(&self, ui: &mut egui::Ui, on_span: &mut dyn FnMut(Span)) {
+    fn ui_semantic(&self, ui: &mut egui::Ui, _on_span: &mut dyn FnMut(Span)) {
         self.addresses.iter().for_each(|address| {
             ui.label(format!(" - {}", address));
         });
@@ -552,7 +547,7 @@ impl SemanticUi for AreaAddressesTlv {
 }
 
 impl SemanticUi for IsReachabilityTlv {
-    fn ui_semantic(&self, ui: &mut egui::Ui, on_span: &mut dyn FnMut(Span)) {
+    fn ui_semantic(&self, ui: &mut egui::Ui, _on_span: &mut dyn FnMut(Span)) {
         self.neighbors_iter().for_each(|n| {
             ui.label(format!(" - {} (metric: {})", n.system_id, n.metric));
         })
@@ -560,7 +555,7 @@ impl SemanticUi for IsReachabilityTlv {
 }
 
 impl SemanticUi for IsExtendedReachabilityTlv {
-    fn ui_semantic(&self, ui: &mut egui::Ui, on_span: &mut dyn FnMut(Span)) {
+    fn ui_semantic(&self, ui: &mut egui::Ui, _on_span: &mut dyn FnMut(Span)) {
         self.neighbors.iter().for_each(|n| {
             ui.label(format!(
                 " - {}.{:#02} (metric: {})",
@@ -571,7 +566,7 @@ impl SemanticUi for IsExtendedReachabilityTlv {
 }
 
 impl SemanticUi for IpReachabilityTlv {
-    fn ui_semantic(&self, ui: &mut egui::Ui, on_span: &mut dyn FnMut(Span)) {
+    fn ui_semantic(&self, ui: &mut egui::Ui, _on_span: &mut dyn FnMut(Span)) {
         self.prefixes_iter().for_each(|p| {
             let up_label = if p.up { "[UP]" } else { "[  ]" };
             ui.label(format!(
@@ -583,7 +578,7 @@ impl SemanticUi for IpReachabilityTlv {
 }
 
 impl SemanticUi for ExtendedIpReachabilityTlv {
-    fn ui_semantic(&self, ui: &mut egui::Ui, on_span: &mut dyn FnMut(Span)) {
+    fn ui_semantic(&self, ui: &mut egui::Ui, _on_span: &mut dyn FnMut(Span)) {
         self.neighbors.iter().for_each(|p| {
             let up_label = if p.up_down { "[UP]" } else { "[  ]" };
             ui.label(format!(
@@ -595,7 +590,7 @@ impl SemanticUi for ExtendedIpReachabilityTlv {
 }
 
 impl SemanticUi for RouterCapabilityTlv {
-    fn ui_semantic(&self, ui: &mut egui::Ui, on_span: &mut dyn FnMut(Span)) {
+    fn ui_semantic(&self, ui: &mut egui::Ui, _on_span: &mut dyn FnMut(Span)) {
         let te_r_id = if let Some(id) = &self.te_router_id {
             &id.to_string()
         } else {
@@ -608,23 +603,4 @@ impl SemanticUi for RouterCapabilityTlv {
             });
         });
     }
-}
-
-pub fn combo_box_lsa_selector(
-    ui: &mut egui::Ui,
-    selected_node: &Node,
-    state: &mut PacketInspectorState,
-) -> anyhow::Result<()> {
-    let ospf_data = match &selected_node.info {
-        NodeInfo::Router(r) => r.protocol_data().map(|d| d.ospf()).flatten(),
-        NodeInfo::Network(n) => n.protocol_data().map(|d| d.ospf()).flatten(),
-    };
-
-    let all_advertisements: Vec<Lsa> = if let Some(data) = ospf_data {
-        todo!()
-    } else {
-        return Err(anyhow!("No OSPF data found"));
-    };
-
-    Ok(())
 }

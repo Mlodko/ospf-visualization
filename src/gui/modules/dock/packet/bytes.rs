@@ -28,7 +28,7 @@ impl DockPanel for BytesPacketInspector {
         &mut self,
         ui: &mut egui::Ui,
         _actions: &mut dyn crate::gui::actions::AppActions,
-        dock_actions: &mut dyn DockActions,
+        _dock_actions: &mut dyn DockActions,
     ) {
         let (raw, span) = {
             let state = self.state.lock().unwrap();

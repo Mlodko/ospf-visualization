@@ -1,8 +1,7 @@
 use egui::Context;
 use uuid::Uuid;
 
-use crate::{
-    gui::{
+use crate::gui::{
         actions::AppActions,
         graph_overlay::{self, PathPreview},
         node_shape,
@@ -10,9 +9,7 @@ use crate::{
             icons::{IconId, load_icon},
             tray::{Tool, ToolId},
         },
-    },
-    network::network_graph::NetworkGraph,
-};
+    };
 
 pub struct PathTool;
 
@@ -32,9 +29,9 @@ impl Tool for PathTool {
 
     fn on_click(
         &self,
-        ctx: &egui::Context,
+        _ctx: &egui::Context,
         pos: egui::Pos2,
-        actions: &mut dyn crate::gui::actions::AppActions,
+        _actions: &mut dyn crate::gui::actions::AppActions,
     ) {
         println!("Path tool clicked at {:?}", pos);
     }

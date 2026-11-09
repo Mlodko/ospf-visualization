@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use crate::{
     adapters::{RoutingMessage, VendorAdapter},
     data_acquisition::{
-        transport::grpc::{client::GnmiClient, types::JsonIetfNotification},
         TransportPayload,
+        transport::grpc::{client::GnmiClient, types::JsonIetfNotification},
     },
     network::router::{InterfaceStats, RouterId},
     topology::{protocol::AcquisitionError, source::RoutingMessageSource},

@@ -19,7 +19,7 @@ impl DockPanel for SourcesPanel {
         &mut self,
         ui: &mut egui::Ui,
         actions: &mut dyn crate::gui::actions::AppActions,
-        dock_actions: &mut dyn DockActions,
+        _dock_actions: &mut dyn DockActions,
     ) {
         egui::ScrollArea::vertical().show(ui, |ui| {
             if ui.button("Print store data").clicked() {

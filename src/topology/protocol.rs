@@ -9,9 +9,9 @@ use crate::{
     adapters::RoutingMessage,
     network::{node::Node, router::InterfaceStats},
     topology::{
+        TopologySource,
         source::{RoutingMessageSource, SnapshotSource, TopologyError},
         store::SourceId,
-        TopologySource,
     },
 };
 
@@ -84,7 +84,7 @@ pub trait RoutingProtocol: Send + Sync {
 /// Protocol-specific conversion and post-processing for canonical messages.
 pub trait RoutingMessageProtocol: Send + Sync {
     fn message_to_nodes(&self, message: RoutingMessage)
-        -> Result<Vec<Node>, ProtocolTopologyError>;
+    -> Result<Vec<Node>, ProtocolTopologyError>;
 
     fn post_process(&self, nodes: &mut Vec<Node>) -> Result<(), ProtocolTopologyError>;
 }

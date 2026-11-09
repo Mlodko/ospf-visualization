@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
-use nom::number::complete::{be_u16, be_u8};
-use nom::{number::complete::be_u32, IResult};
+use nom::number::complete::{be_u8, be_u16};
+use nom::{IResult, number::complete::be_u32};
 
 use super::super::span::{Field, Span};
 
@@ -92,7 +92,6 @@ impl Display for LsaType {
             Self::Summary => write!(f, "Summary (3)"),
             Self::AsbrSummary => write!(f, "ASBR Summary (4)"),
             Self::AsExternal => write!(f, "AS External (5)"),
-            _ => write!(f, "Unknown"),
         }
     }
 }

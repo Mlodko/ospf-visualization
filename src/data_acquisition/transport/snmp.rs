@@ -407,13 +407,14 @@ impl<'a> From<SnmpTableRow<'a>> for PortableSnmpTableRow {
             .collect(),
             columns: value.columns.into_iter().map(|(k, v)| (
                 k.iter().expect("Table OID prefix component(s) don't fit into u64, should never happen")
-                .collect(), 
+                .collect(),
                 v))
             .collect(),
         }
     }
 }
 
+#[cfg(test)]
 mod tests {
     // moved specific net imports into the test where they are used to silence warnings
 
@@ -430,12 +431,20 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_connect() {
         let session = setup().await;
         assert!(session.is_ok());
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_get_data() {
         let session = setup().await.expect("Failed to setup session");
         let mut lock = session.lock().await;
@@ -445,6 +454,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_get_ospf_data() {
         let session = setup().await.expect("Failed to setup session");
         let mut lock = session.lock().await;
@@ -463,6 +476,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_get_table() {
         use std::net::{IpAddr, Ipv4Addr};
         let mut client = SnmpClient::new(
@@ -506,6 +523,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_walk() {
         use std::net::{IpAddr, Ipv4Addr};
         let mut client = SnmpClient::new(

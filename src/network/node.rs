@@ -7,7 +7,7 @@ use crate::{
 use ipnetwork::IpNetwork;
 use nom_derive::Parse;
 use ospf_parser::OspfLinkStateAdvertisement;
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::SerializeStruct};
 use uuid::Uuid;
 
 /// Represents a node in the protocol-agnostic network graph. Multiple access networks and aggregates are represented by the Network variant.
@@ -180,6 +180,7 @@ pub struct OspfRouterPayload {
     pub p2p_link_count: usize,
     pub transit_link_count: usize,
     pub stub_link_count: usize,
+    #[serde(default)]
     pub virtual_link_count: usize,
     pub link_metrics: HashMap<Ipv4Addr, u16>,
     pub per_area_facets: Vec<PerAreaRouterFacet>,
@@ -197,6 +198,7 @@ pub struct PerAreaRouterFacet {
     pub p2p_link_count: usize,
     pub transit_link_count: usize,
     pub stub_link_count: usize,
+    #[serde(default)]
     pub virtual_link_count: usize,
 }
 
@@ -327,7 +329,9 @@ impl From<&OspfLinkStateAdvertisement> for SerializableOspfLsaType {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct OspfDataWire {
+    #[serde(default)]
     pub ls_age: u16,
+    #[serde(default)]
     pub ls_seq_no: u32,
     #[allow(dead_code)]
     pub version: u32, // Increment in Serialize impl this after each change, currently 2
@@ -437,6 +441,7 @@ impl ProtocolData {
     }
 }
 
+#[cfg(test)]
 mod tests {
     #[allow(unused)]
     use super::*;
