@@ -2,8 +2,9 @@ name: SRL-Lab
 
 mgmt:
   mtu: 1500
-  network: custom_mgmtt
+  network: custom_mgmt
   ipv4-subnet: 200.0.0.0/8
+  bridge: br-mgmt
 
 topology:
   groups:

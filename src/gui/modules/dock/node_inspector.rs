@@ -147,7 +147,11 @@ fn render_protocol_data(data: &ProtocolData, ui: &mut Ui, dock_actions: &mut dyn
 
 fn render_ospf_data(data: &OspfData, ui: &mut Ui, dock_actions: &mut dyn DockActions) {
     ui.label("Protocol: OSPF");
-    ui.label(format!("Area ID: {}", data.area_id));
+    ui.label(format!(
+        "Area ID: {}",
+        data.area_id
+            .map_or_else(|| "unknown".to_string(), |area| area.to_string())
+    ));
     let adv_link = ui
         .link("Link State Advertisement")
         .on_hover_text("View LSA in packet inspector");

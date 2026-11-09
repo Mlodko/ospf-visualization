@@ -263,7 +263,7 @@ pub struct RouterCapabilityTlv {
 /// TLV #2: IS Reachability
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IsReachabilityTlv {
-    neighbors: Vec<IsNeighbor>,
+    pub neighbors: Vec<IsNeighbor>,
 }
 
 impl IsReachabilityTlv {
@@ -350,6 +350,10 @@ impl LspId {
     /// Constructs a new LSP ID from an 8-byte array.
     pub fn new(raw_id: [u8; 8]) -> Self {
         LspId { raw_id }
+    }
+
+    pub fn system_id(&self) -> Result<SystemId, LspError> {
+        SystemId::new(&self.raw_id[0..6])
     }
 
     pub fn new_from(system_id: &SystemId, pseudonode_id: u8, fragment_number: u8) -> Self {

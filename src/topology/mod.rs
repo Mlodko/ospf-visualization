@@ -17,8 +17,10 @@ Re-exports:
 pub mod ospf_bfs_protocol;
 pub mod ospf_protocol;
 pub mod protocol;
+pub mod routing_source;
 pub mod source;
 pub mod store;
 
-pub use ospf_protocol::OspfSnmpTopology;
-pub use source::TopologySource;
+pub use ospf_protocol::{NokiaGnmiOspfTopology, OspfSnmpTopology};
+pub use protocol::{RoutingMessageProtocol, RoutingMessageTopology};
+pub use source::{RoutingMessageSource, TopologySource};

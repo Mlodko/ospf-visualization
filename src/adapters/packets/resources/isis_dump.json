@@ -1,0 +1,846 @@
+{
+  "srl_nokia-network-instance:network-instance": [
+    {
+      "name": "default",
+      "protocols": {
+        "srl_nokia-isis:isis": {
+          "instance": [
+            {
+              "name": "1",
+              "level": [
+                {
+                  "level-number": 2,
+                  "link-state-database": {
+                    "lsp": [
+                      {
+                        "lsp-id": "0000.0000.0001.00-00",
+                        "maximum-area-addresses": 3,
+                        "version": 1,
+                        "id-length": 6,
+                        "pdu-type": "level-2",
+                        "remaining-lifetime": 860,
+                        "sequence-number": 32,
+                        "checksum": 20344,
+                        "pdu-length": 143,
+                        "is-type": 3,
+                        "tlvs": {
+                          "tlv": [
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:area-addresses",
+                              "area-address": { "address": ["49.0000"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:dynamic-name",
+                              "hostname": { "hostname": ["rcb1"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-ipv4-reachability",
+                              "extended-ipv4-reachability": {
+                                "prefixes": {
+                                  "prefix": [
+                                    {
+                                      "prefix": "20.0.0.0/8",
+                                      "up-down": false,
+                                      "s-bit": true,
+                                      "metric": 0,
+                                      "subtlvs": {
+                                        "subtlv": [
+                                          {
+                                            "type": "srl_nokia-isis-lsdb-types:ip-reachability-prefix-flags",
+                                            "flags": {
+                                              "flags": ["external-flag"]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "prefix": "20.0.12.0/24",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 10
+                                    },
+                                    {
+                                      "prefix": "20.0.13.0/24",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 10
+                                    },
+                                    {
+                                      "prefix": "100.2.0.0/16",
+                                      "up-down": false,
+                                      "s-bit": true,
+                                      "metric": 0,
+                                      "subtlvs": {
+                                        "subtlv": [
+                                          {
+                                            "type": "srl_nokia-isis-lsdb-types:ip-reachability-prefix-flags",
+                                            "flags": {
+                                              "flags": ["external-flag"]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "prefix": "100.2.0.1/32",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 0
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-is-reachability",
+                              "extended-is-reachability": {
+                                "neighbors": {
+                                  "neighbor": [
+                                    {
+                                      "system-id": "0000.0000.0001",
+                                      "instances": {
+                                        "instance": [
+                                          {
+                                            "id": "0",
+                                            "metric": 10,
+                                            "subtlvs": {
+                                              "subtlv": [
+                                                {
+                                                  "type": "srl_nokia-isis-lsdb-types:is-reachability-ipv4-interface-address",
+                                                  "ipv4-interface-address": {
+                                                    "address": ["20.0.12.1"]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "id": "1",
+                                            "metric": 10,
+                                            "subtlvs": {
+                                              "subtlv": [
+                                                {
+                                                  "type": "srl_nokia-isis-lsdb-types:is-reachability-ipv4-interface-address",
+                                                  "ipv4-interface-address": {
+                                                    "address": ["20.0.13.1"]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:ipv4-interface-addresses",
+                              "ipv4-interface-addresses": {
+                                "address": [
+                                  "20.0.12.1",
+                                  "20.0.13.1",
+                                  "100.2.0.1"
+                                ]
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:nlpid",
+                              "nlpid": { "nlpid": ["ipv6", "ipv4"] }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "lsp-id": "0000.0000.0001.01-00",
+                        "maximum-area-addresses": 3,
+                        "version": 1,
+                        "id-length": 6,
+                        "pdu-type": "level-2",
+                        "remaining-lifetime": 865,
+                        "sequence-number": 28,
+                        "checksum": 14943,
+                        "pdu-length": 53,
+                        "is-type": 3,
+                        "tlvs": {
+                          "tlv": [
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-is-reachability",
+                              "extended-is-reachability": {
+                                "neighbors": {
+                                  "neighbor": [
+                                    {
+                                      "system-id": "0000.0000.0001",
+                                      "instances": {
+                                        "instance": [{ "id": "0" }]
+                                      }
+                                    },
+                                    {
+                                      "system-id": "0000.0000.0002",
+                                      "instances": {
+                                        "instance": [{ "id": "0" }]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "lsp-id": "0000.0000.0001.02-00",
+                        "maximum-area-addresses": 3,
+                        "version": 1,
+                        "id-length": 6,
+                        "pdu-type": "level-2",
+                        "remaining-lifetime": 761,
+                        "sequence-number": 28,
+                        "checksum": 18766,
+                        "pdu-length": 53,
+                        "is-type": 3,
+                        "tlvs": {
+                          "tlv": [
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-is-reachability",
+                              "extended-is-reachability": {
+                                "neighbors": {
+                                  "neighbor": [
+                                    {
+                                      "system-id": "0000.0000.0001",
+                                      "instances": {
+                                        "instance": [{ "id": "0" }]
+                                      }
+                                    },
+                                    {
+                                      "system-id": "0000.0000.0003",
+                                      "instances": {
+                                        "instance": [{ "id": "0" }]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "lsp-id": "0000.0000.0002.00-00",
+                        "maximum-area-addresses": 3,
+                        "version": 1,
+                        "id-length": 6,
+                        "pdu-type": "level-2",
+                        "remaining-lifetime": 912,
+                        "sequence-number": 35,
+                        "checksum": 33261,
+                        "pdu-length": 164,
+                        "is-type": 3,
+                        "tlvs": {
+                          "tlv": [
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:area-addresses",
+                              "area-address": { "address": ["49.0000"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:dynamic-name",
+                              "hostname": { "hostname": ["rcb2"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-ipv4-reachability",
+                              "extended-ipv4-reachability": {
+                                "prefixes": {
+                                  "prefix": [
+                                    {
+                                      "prefix": "10.0.0.0/8",
+                                      "up-down": false,
+                                      "s-bit": true,
+                                      "metric": 0,
+                                      "subtlvs": {
+                                        "subtlv": [
+                                          {
+                                            "type": "srl_nokia-isis-lsdb-types:ip-reachability-prefix-flags",
+                                            "flags": {
+                                              "flags": ["external-flag"]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "prefix": "20.0.0.0/8",
+                                      "up-down": false,
+                                      "s-bit": true,
+                                      "metric": 0,
+                                      "subtlvs": {
+                                        "subtlv": [
+                                          {
+                                            "type": "srl_nokia-isis-lsdb-types:ip-reachability-prefix-flags",
+                                            "flags": {
+                                              "flags": ["external-flag"]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "prefix": "20.0.12.0/24",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 10
+                                    },
+                                    {
+                                      "prefix": "20.0.23.0/24",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 10
+                                    },
+                                    {
+                                      "prefix": "100.1.0.0/16",
+                                      "up-down": false,
+                                      "s-bit": true,
+                                      "metric": 0,
+                                      "subtlvs": {
+                                        "subtlv": [
+                                          {
+                                            "type": "srl_nokia-isis-lsdb-types:ip-reachability-prefix-flags",
+                                            "flags": {
+                                              "flags": ["external-flag"]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "prefix": "100.2.0.0/16",
+                                      "up-down": false,
+                                      "s-bit": true,
+                                      "metric": 0,
+                                      "subtlvs": {
+                                        "subtlv": [
+                                          {
+                                            "type": "srl_nokia-isis-lsdb-types:ip-reachability-prefix-flags",
+                                            "flags": {
+                                              "flags": ["external-flag"]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "prefix": "100.2.0.2/32",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 0
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-is-reachability",
+                              "extended-is-reachability": {
+                                "neighbors": {
+                                  "neighbor": [
+                                    {
+                                      "system-id": "0000.0000.0001",
+                                      "instances": {
+                                        "instance": [
+                                          {
+                                            "id": "0",
+                                            "metric": 10,
+                                            "subtlvs": {
+                                              "subtlv": [
+                                                {
+                                                  "type": "srl_nokia-isis-lsdb-types:is-reachability-ipv4-interface-address",
+                                                  "ipv4-interface-address": {
+                                                    "address": ["20.0.12.2"]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "system-id": "0000.0000.0002",
+                                      "instances": {
+                                        "instance": [
+                                          {
+                                            "id": "0",
+                                            "metric": 10,
+                                            "subtlvs": {
+                                              "subtlv": [
+                                                {
+                                                  "type": "srl_nokia-isis-lsdb-types:is-reachability-ipv4-interface-address",
+                                                  "ipv4-interface-address": {
+                                                    "address": ["20.0.23.2"]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:ipv4-interface-addresses",
+                              "ipv4-interface-addresses": {
+                                "address": [
+                                  "20.0.12.2",
+                                  "20.0.23.2",
+                                  "100.2.0.2"
+                                ]
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:nlpid",
+                              "nlpid": { "nlpid": ["ipv6", "ipv4"] }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "lsp-id": "0000.0000.0002.02-00",
+                        "maximum-area-addresses": 3,
+                        "version": 1,
+                        "id-length": 6,
+                        "pdu-type": "level-2",
+                        "remaining-lifetime": 903,
+                        "sequence-number": 28,
+                        "checksum": 19019,
+                        "pdu-length": 53,
+                        "is-type": 3,
+                        "tlvs": {
+                          "tlv": [
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-is-reachability",
+                              "extended-is-reachability": {
+                                "neighbors": {
+                                  "neighbor": [
+                                    {
+                                      "system-id": "0000.0000.0002",
+                                      "instances": {
+                                        "instance": [{ "id": "0" }]
+                                      }
+                                    },
+                                    {
+                                      "system-id": "0000.0000.0003",
+                                      "instances": {
+                                        "instance": [{ "id": "0" }]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "lsp-id": "0000.0000.0003.00-00",
+                        "maximum-area-addresses": 3,
+                        "version": 1,
+                        "id-length": 6,
+                        "pdu-type": "level-2",
+                        "remaining-lifetime": 1011,
+                        "sequence-number": 30,
+                        "checksum": 60887,
+                        "pdu-length": 153,
+                        "is-type": 3,
+                        "tlvs": {
+                          "tlv": [
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:area-addresses",
+                              "area-address": { "address": ["49.0000"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:dynamic-name",
+                              "hostname": { "hostname": ["rcb3"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-ipv4-reachability",
+                              "extended-ipv4-reachability": {
+                                "prefixes": {
+                                  "prefix": [
+                                    {
+                                      "prefix": "20.0.13.0/24",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 10
+                                    },
+                                    {
+                                      "prefix": "20.0.23.0/24",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 10
+                                    },
+                                    {
+                                      "prefix": "20.101.12.0/24",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 10
+                                    },
+                                    {
+                                      "prefix": "100.2.0.3/32",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 0
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-is-reachability",
+                              "extended-is-reachability": {
+                                "neighbors": {
+                                  "neighbor": [
+                                    {
+                                      "system-id": "0000.0000.0001",
+                                      "instances": {
+                                        "instance": [
+                                          {
+                                            "id": "0",
+                                            "metric": 10,
+                                            "subtlvs": {
+                                              "subtlv": [
+                                                {
+                                                  "type": "srl_nokia-isis-lsdb-types:is-reachability-ipv4-interface-address",
+                                                  "ipv4-interface-address": {
+                                                    "address": ["20.0.13.3"]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "system-id": "0000.0000.0002",
+                                      "instances": {
+                                        "instance": [
+                                          {
+                                            "id": "0",
+                                            "metric": 10,
+                                            "subtlvs": {
+                                              "subtlv": [
+                                                {
+                                                  "type": "srl_nokia-isis-lsdb-types:is-reachability-ipv4-interface-address",
+                                                  "ipv4-interface-address": {
+                                                    "address": ["20.0.23.3"]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "system-id": "0000.0001.0002",
+                                      "instances": {
+                                        "instance": [
+                                          {
+                                            "id": "0",
+                                            "metric": 10,
+                                            "subtlvs": {
+                                              "subtlv": [
+                                                {
+                                                  "type": "srl_nokia-isis-lsdb-types:is-reachability-ipv4-interface-address",
+                                                  "ipv4-interface-address": {
+                                                    "address": ["20.101.12.3"]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:ipv4-interface-addresses",
+                              "ipv4-interface-addresses": {
+                                "address": [
+                                  "20.0.13.3",
+                                  "20.0.23.3",
+                                  "20.101.12.3",
+                                  "100.2.0.3"
+                                ]
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:nlpid",
+                              "nlpid": { "nlpid": ["ipv6", "ipv4"] }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "lsp-id": "0000.0001.0001.00-00",
+                        "maximum-area-addresses": 3,
+                        "version": 1,
+                        "id-length": 6,
+                        "pdu-type": "level-2",
+                        "remaining-lifetime": 1165,
+                        "sequence-number": 34,
+                        "checksum": 8208,
+                        "pdu-length": 105,
+                        "is-type": 3,
+                        "tlvs": {
+                          "tlv": [
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:area-addresses",
+                              "area-address": { "address": ["49.0001"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:dynamic-name",
+                              "hostname": { "hostname": ["rdb11"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-ipv4-reachability",
+                              "extended-ipv4-reachability": {
+                                "prefixes": {
+                                  "prefix": [
+                                    {
+                                      "prefix": "20.101.12.0/24",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 10
+                                    },
+                                    {
+                                      "prefix": "100.2.1.1/32",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 0
+                                    },
+                                    {
+                                      "prefix": "100.2.1.2/32",
+                                      "up-down": false,
+                                      "s-bit": true,
+                                      "metric": 10,
+                                      "subtlvs": {
+                                        "subtlv": [
+                                          {
+                                            "type": "srl_nokia-isis-lsdb-types:ip-reachability-prefix-flags",
+                                            "flags": {
+                                              "flags": ["readvertisement-flag"]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-is-reachability",
+                              "extended-is-reachability": {
+                                "neighbors": {
+                                  "neighbor": [
+                                    {
+                                      "system-id": "0000.0001.0002",
+                                      "instances": {
+                                        "instance": [
+                                          {
+                                            "id": "0",
+                                            "metric": 10,
+                                            "subtlvs": {
+                                              "subtlv": [
+                                                {
+                                                  "type": "srl_nokia-isis-lsdb-types:is-reachability-ipv4-interface-address",
+                                                  "ipv4-interface-address": {
+                                                    "address": ["20.101.12.11"]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:ipv4-interface-addresses",
+                              "ipv4-interface-addresses": {
+                                "address": ["20.101.12.11", "100.2.1.1"]
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:nlpid",
+                              "nlpid": { "nlpid": ["ipv6", "ipv4"] }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "lsp-id": "0000.0001.0002.00-00",
+                        "maximum-area-addresses": 3,
+                        "version": 1,
+                        "id-length": 6,
+                        "pdu-type": "level-2",
+                        "remaining-lifetime": 1001,
+                        "sequence-number": 31,
+                        "checksum": 35491,
+                        "pdu-length": 105,
+                        "is-type": 3,
+                        "tlvs": {
+                          "tlv": [
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:area-addresses",
+                              "area-address": { "address": ["49.0001"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:dynamic-name",
+                              "hostname": { "hostname": ["rdb12"] }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-ipv4-reachability",
+                              "extended-ipv4-reachability": {
+                                "prefixes": {
+                                  "prefix": [
+                                    {
+                                      "prefix": "20.101.12.0/24",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 10
+                                    },
+                                    {
+                                      "prefix": "100.2.1.1/32",
+                                      "up-down": false,
+                                      "s-bit": true,
+                                      "metric": 10,
+                                      "subtlvs": {
+                                        "subtlv": [
+                                          {
+                                            "type": "srl_nokia-isis-lsdb-types:ip-reachability-prefix-flags",
+                                            "flags": {
+                                              "flags": ["readvertisement-flag"]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "prefix": "100.2.1.2/32",
+                                      "up-down": false,
+                                      "s-bit": false,
+                                      "metric": 0
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-is-reachability",
+                              "extended-is-reachability": {
+                                "neighbors": {
+                                  "neighbor": [
+                                    {
+                                      "system-id": "0000.0001.0002",
+                                      "instances": {
+                                        "instance": [
+                                          {
+                                            "id": "0",
+                                            "metric": 10,
+                                            "subtlvs": {
+                                              "subtlv": [
+                                                {
+                                                  "type": "srl_nokia-isis-lsdb-types:is-reachability-ipv4-interface-address",
+                                                  "ipv4-interface-address": {
+                                                    "address": ["20.101.12.12"]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:ipv4-interface-addresses",
+                              "ipv4-interface-addresses": {
+                                "address": ["20.101.12.12", "100.2.1.2"]
+                              }
+                            },
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:nlpid",
+                              "nlpid": { "nlpid": ["ipv6", "ipv4"] }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "lsp-id": "0000.0001.0002.01-00",
+                        "maximum-area-addresses": 3,
+                        "version": 1,
+                        "id-length": 6,
+                        "pdu-type": "level-2",
+                        "remaining-lifetime": 1014,
+                        "sequence-number": 30,
+                        "checksum": 17961,
+                        "pdu-length": 66,
+                        "is-type": 3,
+                        "tlvs": {
+                          "tlv": [
+                            {
+                              "type": "srl_nokia-isis-lsdb-types:extended-is-reachability",
+                              "extended-is-reachability": {
+                                "neighbors": {
+                                  "neighbor": [
+                                    {
+                                      "system-id": "0000.0000.0003",
+                                      "instances": {
+                                        "instance": [{ "id": "0" }]
+                                      }
+                                    },
+                                    {
+                                      "system-id": "0000.0001.0001",
+                                      "instances": {
+                                        "instance": [{ "id": "0" }]
+                                      }
+                                    },
+                                    {
+                                      "system-id": "0000.0001.0002",
+                                      "instances": {
+                                        "instance": [{ "id": "0" }]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

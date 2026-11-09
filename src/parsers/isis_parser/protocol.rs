@@ -4,6 +4,7 @@ use ipnetwork::IpNetwork;
 use uuid::Uuid;
 
 use crate::{
+    adapters::RoutingMessage,
     network::{
         node::{IsIsData, Network, Node, NodeInfo, ProtocolData},
         router::{Router, RouterId},
@@ -13,7 +14,9 @@ use crate::{
         frr_json_lsp::JsonLspdb,
         hostname::HostnameMap,
     },
-    topology::protocol::{ProtocolParseError, ProtocolTopologyError, RoutingProtocol},
+    topology::protocol::{
+        ProtocolParseError, ProtocolTopologyError, RoutingMessageProtocol, RoutingProtocol,
+    },
 };
 
 /*
@@ -231,6 +234,30 @@ impl RoutingProtocol for JsonIsisProtocol {
                     }
                 }
                 Err(e) => {
+                    // Keep unresolved pseudonetworks distinct. The placeholder prefix
+                    // otherwise gives every network the same UUID and causes the
+                    // topology store to discard all but the last one.
+                    let fallback_id = if let NodeInfo::Network(net) = &nodes[net_idx].info {
+                        net.protocol_data.as_ref().and_then(|data| {
+                            if let ProtocolData::IsIs(data) = data {
+                                Some(Uuid::new_v5(
+                                    &Uuid::NAMESPACE_OID,
+                                    format!(
+                                        "isis-pseudonode:{}",
+                                        hex::encode(data.lsp_id.get_raw_id())
+                                    )
+                                    .as_bytes(),
+                                ))
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    };
+                    if let Some(id) = fallback_id {
+                        nodes[net_idx].id = id;
+                    }
                     eprintln!(
                         "[JsonIsisProtocol::post_process] failed to resolve prefix for network idx={} due to {:?}",
                         net_idx, e
@@ -282,6 +309,43 @@ impl RoutingProtocol for JsonIsisProtocol {
 
         println!("[JsonIsisProtocol::post_process] complete");
         Ok(())
+    }
+}
+
+impl RoutingMessageProtocol for JsonIsisProtocol {
+    fn message_to_nodes(
+        &self,
+        message: RoutingMessage,
+    ) -> Result<Vec<Node>, ProtocolTopologyError> {
+        let RoutingMessage::IsIs(lsp) = message else {
+            return Err(ProtocolTopologyError::Conversion(
+                "IS-IS topology received a non-IS-IS routing message".to_string(),
+            ));
+        };
+
+        let legacy_lsp: Lsp = serde_json::from_value(
+            serde_json::to_value(lsp)
+                .map_err(|error| ProtocolTopologyError::Conversion(error.to_string()))?,
+        )
+        .map_err(|error| ProtocolTopologyError::Conversion(error.to_string()))?;
+        let label = legacy_lsp
+            .get_tlvs_by(|tlv| matches!(tlv, Tlv::Hostname(_)))
+            .first()
+            .and_then(|tlv| match tlv {
+                Tlv::Hostname(hostname) => Some(hostname.clone()),
+                _ => None,
+            });
+        let node_info = if legacy_lsp.lsp_id.is_pseudonode() {
+            NodeInfo::Network(self.lsp_to_network(legacy_lsp)?)
+        } else {
+            NodeInfo::Router(self.lsp_to_router(legacy_lsp)?)
+        };
+
+        Ok(vec![Node::new(node_info, label)])
+    }
+
+    fn post_process(&self, nodes: &mut Vec<Node>) -> Result<(), ProtocolTopologyError> {
+        <Self as RoutingProtocol>::post_process(self, nodes)
     }
 }
 
@@ -391,10 +455,10 @@ fn resolve_network_prefix(
             ext_reach.neighbors.len()
         );
 
-        let neighbor_lsp_ids: Vec<LspId> = ext_reach
+        let neighbor_system_ids: HashSet<SystemId> = ext_reach
             .neighbors
             .iter()
-            .map(|n| LspId::new_from(&n.neighbor_id, n.pseudonode_id, 0))
+            .map(|n| n.neighbor_id.clone())
             .collect();
 
         let neighbor_isis_data: Vec<&IsIsData> = router_nodes
@@ -411,7 +475,14 @@ fn resolve_network_prefix(
             })
             // Enforce level match to avoid mixing L1/L2 data
             .filter(|data| data.is_level == isis_data.is_level)
-            .filter(|data| neighbor_lsp_ids.contains(&data.lsp_id))
+            .filter(|data| {
+                !data.lsp_id.is_pseudonode()
+                    && data
+                        .lsp_id
+                        .get_system_id()
+                        .ok()
+                        .is_some_and(|id| neighbor_system_ids.contains(&id))
+            })
             .collect();
 
         println!(
@@ -440,13 +511,26 @@ fn resolve_network_prefix(
                     }
                     None
                 })
-                .filter(|data| neighbor_lsp_ids.contains(&data.lsp_id))
+                .filter(|data| {
+                    !data.lsp_id.is_pseudonode()
+                        && data
+                            .lsp_id
+                            .get_system_id()
+                            .ok()
+                            .is_some_and(|id| neighbor_system_ids.contains(&id))
+                })
                 .collect();
 
             // If DIS data exists and is part of the neighbor set but missing, include it.
             let mut neighbor_isis_data_fallback: Vec<&IsIsData> = neighbor_isis_data_any_level;
             if let Some(dis) = dis_data.as_ref() {
-                if neighbor_lsp_ids.contains(&dis.lsp_id) {
+                if !dis.lsp_id.is_pseudonode()
+                    && dis
+                        .lsp_id
+                        .get_system_id()
+                        .ok()
+                        .is_some_and(|id| neighbor_system_ids.contains(&id))
+                {
                     // ensure uniqueness by lsp_id
                     let has_dis = neighbor_isis_data_fallback
                         .iter()

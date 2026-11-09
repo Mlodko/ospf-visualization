@@ -1,3 +1,5 @@
+use std::net::Ipv4Addr;
+
 pub mod packets;
 pub mod vendors;
 
@@ -10,7 +12,10 @@ pub enum RoutingProtocol {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RoutingMessage {
-    Ospf(packets::ospf::lsa::Lsa),
+    Ospf {
+        area_id: Option<Ipv4Addr>,
+        lsa: packets::ospf::lsa::Lsa,
+    },
     IsIs(packets::isis::Lsp),
     Bgp(),
 }

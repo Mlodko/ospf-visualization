@@ -46,6 +46,22 @@ pub trait TopologySource: Send + Sync {
     async fn fetch_nodes(&mut self) -> TopologyResult<Vec<Node>>;
 }
 
+/// Supplies canonical protocol messages to the topology layer.
+#[async_trait]
+pub trait RoutingMessageSource: Send + Sync {
+    async fn fetch_messages(
+        &mut self,
+    ) -> Result<Vec<crate::adapters::RoutingMessage>, crate::topology::protocol::AcquisitionError>;
+
+    async fn fetch_source_id(
+        &mut self,
+    ) -> Result<RouterId, crate::topology::protocol::AcquisitionError>;
+
+    async fn fetch_stats(
+        &mut self,
+    ) -> Result<Vec<InterfaceStats>, crate::topology::protocol::AcquisitionError>;
+}
+
 type SourceId = RouterId;
 
 /// An async trait for providing a snapshot of topology data to the GUI.

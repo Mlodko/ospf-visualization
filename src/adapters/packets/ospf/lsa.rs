@@ -32,7 +32,7 @@ impl Lsa {
         // The header's `length` field is total LSA length (header + payload).
         // Validate we have at least that many bytes in `input`.
         let total_len = header.length.value as usize;
-        if input.len() < total_len {
+        if total_len < consumed || input.len() < total_len {
             return Err(nom::Err::Error(nom::error::Error::new(
                 input,
                 nom::error::ErrorKind::LengthValue,
@@ -40,6 +40,7 @@ impl Lsa {
         }
 
         // Slice out the payload bytes according to total length minus header consumed.
+        dbg!(consumed, total_len, rest_after_header.len());
         let payload_len = total_len - consumed;
         let payload_input = &rest_after_header[..payload_len];
 
@@ -102,5 +103,17 @@ mod tests {
             count += 1;
         }
         assert!(count > 0, "No LSAs parsed");
+    }
+
+    #[test]
+    fn test_parse_lsa() {
+        let lsa: [u8; 24] = [
+            100, 1, 0, 2, 100, 1, 0, 1, 128, 0, 0, 5, 39, 83, 0, 28, 0, 0, 0, 0, 0, 0, 0, 16,
+        ];
+        let (rest, parsed_lsa) = Lsa::parse(&lsa).expect("Failed to parse LSA");
+        assert!(
+            rest.is_empty(),
+            "Expected no remaining bytes after parsing LSA"
+        );
     }
 }

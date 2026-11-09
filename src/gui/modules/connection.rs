@@ -27,6 +27,13 @@ pub struct ConnectionsPanel {
     ssh_password: String,
     ssh_clear_sources_on_switch: bool,
     ssh_connection_in_progress: bool,
+
+    gnmi_uri: String,
+    gnmi_username: String,
+    gnmi_password: String,
+    gnmi_source_id: String,
+    gnmi_interface_stats: String,
+    gnmi_clear_sources_on_switch: bool,
 }
 
 impl Default for ConnectionsPanel {
@@ -44,6 +51,13 @@ impl Default for ConnectionsPanel {
             ssh_password: "password".to_string(),
             ssh_clear_sources_on_switch: false,
             ssh_connection_in_progress: false,
+
+            gnmi_uri: "http://127.0.0.1:57401".to_string(),
+            gnmi_username: "admin".to_string(),
+            gnmi_password: String::new(),
+            gnmi_source_id: "0.0.0.0".to_string(),
+            gnmi_interface_stats: String::new(),
+            gnmi_clear_sources_on_switch: false,
         }
     }
 }
@@ -322,6 +336,66 @@ impl ConnectionsPanel {
             }
         }
     }
+
+    fn render_gnmi(
+        &mut self,
+        _ctx: &egui::Context,
+        ui: &mut egui::Ui,
+        actions: &mut dyn crate::gui::actions::AppActions,
+        protocol: crate::gui::autopoll::ProtocolKind,
+    ) {
+        ui.label("Endpoint URI");
+        ui.text_edit_singleline(&mut self.gnmi_uri);
+        ui.label("Username");
+        ui.text_edit_singleline(&mut self.gnmi_username);
+        ui.label("Password");
+        ui.add(egui::TextEdit::singleline(&mut self.gnmi_password).password(true));
+        ui.label("Router ID");
+        ui.text_edit_singleline(&mut self.gnmi_source_id);
+        ui.label("Interface stats: ip,tx_bytes,tx_packets,rx_bytes,rx_packets per line");
+        ui.label("Use - for an unavailable counter.");
+        ui.text_edit_multiline(&mut self.gnmi_interface_stats);
+        ui.checkbox(
+            &mut self.gnmi_clear_sources_on_switch,
+            "Clear previous sources on connect",
+        );
+
+        match actions.gnmi_connect_status().clone() {
+            ConnectStatus::Pending => {
+                ui.add_enabled_ui(false, |ui| ui.button("Connecting..."));
+            }
+            ConnectStatus::Failure(error) => {
+                ui.colored_label(egui::Color32::RED, error);
+                if ui.button("Connect").clicked() {
+                    actions.connect_gnmi(
+                        self.gnmi_uri.clone(),
+                        self.gnmi_username.clone(),
+                        self.gnmi_password.clone(),
+                        self.gnmi_source_id.clone(),
+                        self.gnmi_interface_stats.clone(),
+                        protocol.clone(),
+                        self.gnmi_clear_sources_on_switch,
+                    );
+                }
+            }
+            ConnectStatus::Idle | ConnectStatus::Success => {
+                if matches!(actions.gnmi_connect_status(), ConnectStatus::Success) {
+                    ui.label("gNMI connected");
+                }
+                if ui.button("Connect").clicked() {
+                    actions.connect_gnmi(
+                        self.gnmi_uri.clone(),
+                        self.gnmi_username.clone(),
+                        self.gnmi_password.clone(),
+                        self.gnmi_source_id.clone(),
+                        self.gnmi_interface_stats.clone(),
+                        protocol.clone(),
+                        self.gnmi_clear_sources_on_switch,
+                    );
+                }
+            }
+        }
+    }
 }
 
 impl AppPanel for ConnectionsPanel {
@@ -343,6 +417,26 @@ impl AppPanel for ConnectionsPanel {
                     .default_open(true)
                     .show(ui, |ui| {
                         self.render_snmp(ctx, ui, actions);
+                    });
+                CollapsingHeader::new("OSPF via gNMI")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        self.render_gnmi(
+                            ctx,
+                            ui,
+                            actions,
+                            crate::gui::autopoll::ProtocolKind::Ospf,
+                        );
+                    });
+                CollapsingHeader::new("IS-IS via gNMI")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        self.render_gnmi(
+                            ctx,
+                            ui,
+                            actions,
+                            crate::gui::autopoll::ProtocolKind::Isis,
+                        );
                     });
             });
     }

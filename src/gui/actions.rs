@@ -51,6 +51,8 @@ pub trait ConnectActions {
     fn clear_ssh_connect_status(&mut self);
     fn snmp_connect_status(&self) -> &ConnectStatus;
     fn clear_snmp_connect_status(&mut self);
+    fn gnmi_connect_status(&self) -> &ConnectStatus;
+    fn clear_gnmi_connect_status(&mut self);
     fn connect_ssh(
         &mut self,
         host: String,
@@ -64,6 +66,16 @@ pub trait ConnectActions {
         host: String,
         port: u16,
         community: String,
+        clear_other_sources: bool,
+    );
+    fn connect_gnmi(
+        &mut self,
+        uri: String,
+        username: String,
+        password: String,
+        source_id: String,
+        interface_stats: String,
+        protocol: crate::gui::autopoll::ProtocolKind,
         clear_other_sources: bool,
     );
 }

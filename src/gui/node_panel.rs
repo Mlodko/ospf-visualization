@@ -500,7 +500,11 @@ fn isis_protocol_data_section(ui: &mut Ui, data: &IsIsData) {
 
 fn ospf_protocol_data_section(ui: &mut Ui, data: &OspfData) {
     collapsible_section(ui, "OSPF", false, |ui| {
-        ui.add(label_no_wrap(format!("Area ID: {}", data.area_id)));
+        ui.add(label_no_wrap(format!(
+            "Area ID: {}",
+            data.area_id
+                .map_or_else(|| "unknown".to_string(), |area| area.to_string())
+        )));
         ui.add(label_no_wrap(format!(
             "Advertising Router ID: {}",
             data.advertising_router

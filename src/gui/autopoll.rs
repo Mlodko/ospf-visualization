@@ -1,12 +1,15 @@
 use crate::{
-    data_acquisition::transport::{snmp::SnmpClient, ssh::SshClient},
+    data_acquisition::transport::{grpc::client::GnmiClient, snmp::SnmpClient, ssh::SshClient},
     gui::new_app::AppPanel,
     network::{
         node::Node,
         router::{InterfaceStats, RouterId},
     },
     parsers::isis_parser::topology::{IsIsBfsTopology, IsIsTopology},
-    topology::{OspfSnmpTopology, ospf_protocol::OspfBfsSnmpTopology, source::SnapshotSource},
+    topology::{
+        ospf_protocol::OspfBfsSnmpTopology, source::SnapshotSource, NokiaGnmiOspfTopology,
+        OspfSnmpTopology,
+    },
 };
 use anyhow::anyhow;
 use egui::CollapsingHeader;
@@ -336,6 +339,7 @@ pub enum ProtocolKind {
 pub enum AcquisitionConfig {
     Snmp(SnmpAcquisitionConfig),
     Ssh(SshAcquisitionConfig),
+    Gnmi(GnmiAcquisitionConfig),
 }
 
 #[derive(Clone)]
@@ -352,6 +356,15 @@ pub struct SshAcquisitionConfig {
     pub port: u16,
     pub username: String,
     pub password: String,
+}
+
+#[derive(Clone)]
+pub struct GnmiAcquisitionConfig {
+    pub uri: String,
+    pub username: String,
+    pub password: String,
+    pub source_id: RouterId,
+    pub interface_stats: Vec<InterfaceStats>,
 }
 
 #[derive(Clone)]
@@ -397,6 +410,26 @@ impl SourceSpec {
         }
     }
 
+    pub fn new_gnmi(
+        uri: String,
+        username: String,
+        password: String,
+        source_id: RouterId,
+        interface_stats: Vec<InterfaceStats>,
+        protocol: ProtocolKind,
+    ) -> Self {
+        Self {
+            protocol,
+            acquisition: AcquisitionConfig::Gnmi(GnmiAcquisitionConfig {
+                uri,
+                username,
+                password,
+                source_id,
+                interface_stats,
+            }),
+        }
+    }
+
     pub async fn build_topology(&self) -> Result<Box<dyn SnapshotSource>, String> {
         match (&self.protocol, &self.acquisition) {
             (ProtocolKind::Ospf, AcquisitionConfig::Snmp(config)) => {
@@ -409,6 +442,31 @@ impl SourceSpec {
                 let topo = OspfBfsSnmpTopology::from_snmp_client(client)
                     .await
                     .map_err(|e| format!("Failed to build OSPF topology: {}", e))?;
+                Ok(Box::new(topo))
+            }
+            (ProtocolKind::Ospf, AcquisitionConfig::Gnmi(config)) => {
+                let client =
+                    GnmiClient::new(config.uri.clone(), &config.username, &config.password)
+                        .await
+                        .map_err(|e| format!("Failed to connect to gNMI endpoint: {e}"))?;
+                let topo = NokiaGnmiOspfTopology::from_gnmi_client(
+                    client,
+                    config.source_id.clone(),
+                    config.interface_stats.clone(),
+                );
+                Ok(Box::new(topo))
+            }
+            (ProtocolKind::Isis, AcquisitionConfig::Gnmi(config)) => {
+                let client =
+                    GnmiClient::new(config.uri.clone(), &config.username, &config.password)
+                        .await
+                        .map_err(|e| format!("Failed to connect to gNMI endpoint: {e}"))?;
+                let topo =
+                    crate::parsers::isis_parser::topology::NokiaGnmiIsisTopology::from_gnmi_client(
+                        client,
+                        config.source_id.clone(),
+                        config.interface_stats.clone(),
+                    );
                 Ok(Box::new(topo))
             }
             (ProtocolKind::Isis, AcquisitionConfig::Ssh(config)) => {

@@ -1,8 +1,8 @@
 use std::{fmt::Display, net::Ipv4Addr};
 
 use nom::{
+    number::complete::{be_u16, be_u32, be_u8},
     IResult,
-    number::complete::{be_u8, be_u16, be_u32},
 };
 
 use crate::adapters::packets::{
@@ -31,7 +31,7 @@ impl LsaPayload {
                 let (rest, net) = NetworkLsa::parse(input, start_offset)?;
                 Ok((rest, LsaPayload::Network(net)))
             }
-            LsaType::Summary => {
+            LsaType::Summary | LsaType::AsbrSummary => {
                 let (rest, sum) = SummaryLsa::parse(input, start_offset)?;
                 Ok((rest, LsaPayload::Summary(sum)))
             }

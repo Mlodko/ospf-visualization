@@ -13,10 +13,7 @@ pub fn parse_path(path: &str) -> gnmi::Path {
     }
 }
 
-pub fn extend_path(
-    prefix: Option<&gnmi::Path>,
-    suffix: Option<&gnmi::Path>,
-) -> Option<gnmi::Path> {
+pub fn extend_path(prefix: Option<&gnmi::Path>, suffix: Option<&gnmi::Path>) -> Option<gnmi::Path> {
     match (prefix, suffix) {
         (None, None) => None,
         (Some(path), None) | (None, Some(path)) => Some(path.clone()),

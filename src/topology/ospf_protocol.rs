@@ -1,7 +1,8 @@
 use std::{collections::HashMap, net::Ipv4Addr};
 
 use crate::{
-    data_acquisition::transport::snmp::SnmpClient,
+    adapters::RoutingMessage,
+    data_acquisition::transport::{grpc::client::GnmiClient, snmp::SnmpClient},
     network::{
         node::{
             Network as NetStruct, Node, NodeInfo, OspfPayload, PerAreaRouterFacet, ProtocolData,
@@ -16,8 +17,10 @@ use crate::{
         ospf_bfs_protocol::OspfBfsProtocol,
         protocol::{
             AcquisitionError, AcquisitionSource, FederationError, ProtocolFederator,
-            ProtocolParseError, ProtocolTopologyError,
+            ProtocolParseError, ProtocolTopologyError, RoutingMessageProtocol,
+            RoutingMessageTopology,
         },
+        routing_source::GnmiRoutingMessageSource,
     },
 };
 use async_trait::async_trait;
@@ -29,6 +32,27 @@ use uuid::Uuid;
 /// Stateless OSPF protocol adapter. Parsing & node mapping are record-local;
 /// consolidation and augmentation (summary folding & stub synthesis) happen in `post_process`.
 pub struct OspfProtocol;
+
+pub type NokiaGnmiOspfTopology = super::protocol::RoutingMessageTopology<
+    OspfProtocol,
+    GnmiRoutingMessageSource<crate::adapters::vendors::nokia::gnmi_ospf::NokiaGnmiOspfAdapter>,
+>;
+
+impl NokiaGnmiOspfTopology {
+    pub fn from_gnmi_client(
+        client: GnmiClient,
+        source_id: RouterId,
+        interface_stats: Vec<InterfaceStats>,
+    ) -> Self {
+        let source = GnmiRoutingMessageSource::new(
+            client,
+            crate::adapters::vendors::nokia::gnmi_ospf::NokiaGnmiOspfAdapter,
+            source_id,
+            interface_stats,
+        );
+        Self::new(OspfProtocol, source)
+    }
+}
 
 impl super::protocol::RoutingProtocol for OspfProtocol {
     type RawRecord = OspfRawRow;
@@ -61,6 +85,27 @@ impl super::protocol::RoutingProtocol for OspfProtocol {
         consolidate_networks(nodes)?;
         synthesize_stub_networks(nodes)?;
         Ok(())
+    }
+}
+
+impl RoutingMessageProtocol for OspfProtocol {
+    fn message_to_nodes(
+        &self,
+        message: RoutingMessage,
+    ) -> Result<Vec<Node>, ProtocolTopologyError> {
+        let RoutingMessage::Ospf { area_id, lsa } = message else {
+            return Err(ProtocolTopologyError::Conversion(
+                "OSPF topology received a non-OSPF routing message".to_string(),
+            ));
+        };
+
+        crate::parsers::ospf_parser::lsa::canonical_lsa_to_node(area_id, lsa)
+            .map_err(Into::into)
+            .map(|node| node.into_iter().collect())
+    }
+
+    fn post_process(&self, nodes: &mut Vec<Node>) -> Result<(), ProtocolTopologyError> {
+        <Self as super::protocol::RoutingProtocol>::post_process(self, nodes)
     }
 }
 
@@ -697,5 +742,69 @@ impl ProtocolFederator for OspfFederator {
             return Err(FederationError::MixedIdentity);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use async_trait::async_trait;
+
+    use super::*;
+    use crate::{
+        adapters::{packets::ospf::lsa::Lsa, RoutingMessage},
+        topology::source::{RoutingMessageSource, SnapshotSource, TopologySource},
+    };
+
+    struct FixtureSource {
+        messages: Vec<RoutingMessage>,
+    }
+
+    #[async_trait]
+    impl RoutingMessageSource for FixtureSource {
+        async fn fetch_messages(&mut self) -> Result<Vec<RoutingMessage>, AcquisitionError> {
+            Ok(std::mem::take(&mut self.messages))
+        }
+
+        async fn fetch_source_id(&mut self) -> Result<RouterId, AcquisitionError> {
+            Ok(RouterId::Ipv4("0.0.0.0".parse().unwrap()))
+        }
+
+        async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, AcquisitionError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn canonical_ospf_messages_flow_through_topology() {
+        let line = include_str!("../adapters/packets/ospf/resources/lsa_dump")
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap();
+        let bytes = hex::decode(line.split_whitespace().collect::<String>()).unwrap();
+        let (_, lsa) = Lsa::parse(&bytes).unwrap();
+        let source = FixtureSource {
+            messages: vec![RoutingMessage::Ospf {
+                area_id: Some("0.0.0.0".parse().unwrap()),
+                lsa,
+            }],
+        };
+        let mut topology = RoutingMessageTopology::new(OspfProtocol, source);
+
+        let (source_id, nodes, stats) = topology.fetch_snapshot().await.unwrap();
+
+        assert_eq!(source_id, RouterId::Ipv4("0.0.0.0".parse().unwrap()));
+        assert_eq!(nodes.len(), 1);
+        assert!(stats.is_empty());
+        assert!(
+            matches!(
+                &nodes[0].info,
+                crate::network::node::NodeInfo::Router(router)
+                    if router.protocol_data().is_some()
+            ) || matches!(
+                &nodes[0].info,
+                crate::network::node::NodeInfo::Network(network)
+                    if network.protocol_data().is_some()
+            )
+        );
     }
 }

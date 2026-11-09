@@ -7,7 +7,7 @@ use crate::{
 use ipnetwork::IpNetwork;
 use nom_derive::Parse;
 use ospf_parser::OspfLinkStateAdvertisement;
-use serde::{Deserialize, Serialize, ser::SerializeStruct};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Represents a node in the protocol-agnostic network graph. Multiple access networks and aggregates are represented by the Network variant.
@@ -271,7 +271,7 @@ impl OspfAdvertisement {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct OspfData {
-    pub area_id: Ipv4Addr,
+    pub area_id: Option<Ipv4Addr>,
     pub base_advertisement: OspfAdvertisement,
     pub merged_advertisements: Vec<OspfAdvertisement>,
     pub ls_age: u16,
@@ -331,7 +331,7 @@ pub struct OspfDataWire {
     pub ls_seq_no: u32,
     #[allow(dead_code)]
     pub version: u32, // Increment in Serialize impl this after each change, currently 2
-    pub area_id: Ipv4Addr,
+    pub area_id: Option<Ipv4Addr>,
     pub link_state_id: Ipv4Addr,
     pub advertising_router: Ipv4Addr,
     pub checksum: Option<u16>,

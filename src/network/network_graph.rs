@@ -6,7 +6,7 @@ use std::{
 use eframe::egui::Color32;
 use egui::Pos2;
 use egui_graphs::Graph;
-use petgraph::{Directed, csr::DefaultIx, graph::NodeIndex, prelude::StableGraph, visit::EdgeRef};
+use petgraph::{csr::DefaultIx, graph::NodeIndex, prelude::StableGraph, visit::EdgeRef, Directed};
 use rand::Rng;
 use uuid::Uuid;
 
@@ -20,8 +20,6 @@ use crate::{
     },
     parsers::isis_parser::core_lsp::Tlv,
 };
-
-const IF_SKIP_FUNCTIONALLY_P2P_NETWORKS: bool = false;
 
 /// A protocol-agnostic graph wrapper used by the GUI.
 ///
@@ -39,6 +37,8 @@ pub struct NetworkGraph {
         NetworkGraphEdgeShape,
     >,
     pub node_id_to_index_map: HashMap<Uuid, NodeIndex>,
+    source_nodes: Vec<Node>,
+    collapse_p2p_networks: bool,
     manual_edges: HashMap<UndirectedEdgeKey, ManualEdgeSpec>,
     manual_removed_edges: HashSet<UndirectedEdgeKey>,
 }
@@ -48,6 +48,8 @@ impl Default for NetworkGraph {
         Self {
             graph: Graph::new(StableGraph::new()),
             node_id_to_index_map: HashMap::new(),
+            source_nodes: Vec::new(),
+            collapse_p2p_networks: true,
             manual_edges: HashMap::new(),
             manual_removed_edges: HashSet::new(),
         }
@@ -58,6 +60,7 @@ impl NetworkGraph {
     /// Build a new NetworkGraph from a list of protocol-agnostic nodes.
     /// This method avoids panics by validating lookups and ignores incomplete references.
     pub fn build_new(nodes: Vec<Node>) -> Self {
+        let source_nodes = nodes.clone();
         let (mut graph, node_id_to_index_map) = {
             let mut graph = StableGraph::new();
             let mut node_id_to_index_map = HashMap::new();
@@ -71,7 +74,7 @@ impl NetworkGraph {
 
         // Collect edge specs & networks to remove via helper
         let (edge_specs, node_indices_to_remove) =
-            Self::collect_edge_specs_stable(&graph, &node_id_to_index_map);
+            Self::collect_edge_specs_stable(&graph, &node_id_to_index_map, true);
 
         for node_index in node_indices_to_remove {
             let _ = graph.remove_node(node_index);
@@ -212,8 +215,18 @@ impl NetworkGraph {
         Self {
             graph,
             node_id_to_index_map,
+            source_nodes,
+            collapse_p2p_networks: true,
             ..Default::default()
         }
+    }
+
+    pub fn collapse_p2p_networks(&self) -> bool {
+        self.collapse_p2p_networks
+    }
+
+    pub fn set_collapse_p2p_networks(&mut self, enabled: bool) {
+        self.collapse_p2p_networks = enabled;
     }
 
     /// Reconcile the existing graph in place to match the provided nodes (by UUID).
@@ -222,6 +235,7 @@ impl NetworkGraph {
     /// - Removes vanished nodes
     /// - Rebuilds edges from current nodes (router -> network)
     pub fn reconcile(&mut self, desired_nodes: Vec<Node>) {
+        self.source_nodes = desired_nodes.clone();
         let mut rng = rand::rng();
 
         // 1) Desired set and quick lookup
@@ -317,7 +331,12 @@ impl NetworkGraph {
 
         // 4) Rebuild edges using helper (membership + logical reachability)
         self.clear_all_edges();
-        let edge_specs = self.collect_edge_specs_live();
+        let (edge_specs, collapsed_networks) = self.collect_edge_specs_live();
+        for network_id in collapsed_networks {
+            if let Some(idx) = self.node_id_to_index_map.remove(&network_id) {
+                let _ = self.graph.remove_node(idx);
+            }
+        }
         self.materialize_edges(edge_specs, "[network_graph::reconcile]");
         self.apply_overlay_after_reconcile();
     }
@@ -335,6 +354,7 @@ impl NetworkGraph {
     fn collect_edge_specs_stable(
         graph: &StableGraph<Node, Edge, Directed, DefaultIx>,
         id_map: &HashMap<Uuid, NodeIndex>,
+        collapse_p2p_networks: bool,
     ) -> (Vec<(NodeIndex, Uuid, Uuid, EdgeKind)>, Vec<NodeIndex>) {
         let mut node_indices_to_remove = Vec::new();
         let mut specs: Vec<(NodeIndex, Uuid, Uuid, EdgeKind)> = Vec::new();
@@ -344,8 +364,15 @@ impl NetworkGraph {
             if let NodeInfo::Network(network) = &graph[net_index].info {
                 let net_uuid = graph[net_index].id;
 
-                if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
-                    // Optionally collapse; current policy: just mark for removal
+                if network.attached_routers.len() == 2 && collapse_p2p_networks {
+                    let first = network.attached_routers[0].to_uuidv5();
+                    let second = network.attached_routers[1].to_uuidv5();
+                    if let (Some(&first_idx), Some(_)) = (id_map.get(&first), id_map.get(&second)) {
+                        let kind = EdgeKind::Membership;
+                        if seen.insert((first, second, kind)) {
+                            specs.push((first_idx, first, second, kind));
+                        }
+                    }
                     node_indices_to_remove.push(net_index);
                     continue;
                 }
@@ -391,15 +418,28 @@ impl NetworkGraph {
 
     /// Helper: collect edge specs from the live egui_graphs graph during reconcile
     /// Returns a `Vec<(graph source node index, source uuid, destination uuid, EdgeKind)>`
-    fn collect_edge_specs_live(&self) -> Vec<(NodeIndex, Uuid, Uuid, EdgeKind)> {
+    fn collect_edge_specs_live(&self) -> (Vec<(NodeIndex, Uuid, Uuid, EdgeKind)>, Vec<Uuid>) {
         let mut specs = Vec::new();
+        let mut collapsed_networks = Vec::new();
         let mut seen: HashSet<(Uuid, Uuid, EdgeKind)> = HashSet::new();
 
         for (net_uuid, &net_idx) in self.node_id_to_index_map.iter() {
             if let Some(net_node) = self.graph.node(net_idx) {
                 let payload = net_node.payload();
                 if let NodeInfo::Network(network) = &payload.info {
-                    if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
+                    if network.attached_routers.len() == 2 && self.collapse_p2p_networks {
+                        let first = network.attached_routers[0].to_uuidv5();
+                        let second = network.attached_routers[1].to_uuidv5();
+                        if let (Some(&first_idx), Some(_)) = (
+                            self.node_id_to_index_map.get(&first),
+                            self.node_id_to_index_map.get(&second),
+                        ) {
+                            let kind = EdgeKind::Membership;
+                            if seen.insert((first, second, kind)) {
+                                specs.push((first_idx, first, second, kind));
+                            }
+                        }
+                        collapsed_networks.push(*net_uuid);
                         continue;
                     }
 
@@ -535,7 +575,7 @@ impl NetworkGraph {
             }
         }
 
-        specs
+        (specs, collapsed_networks)
     }
 
     /// Helper: materialize edge specs into the live graph
@@ -758,7 +798,7 @@ impl NetworkGraph {
 
         // Rebuild base edges
         self.clear_all_edges();
-        let specs = self.collect_edge_specs_live();
+        let (specs, _) = self.collect_edge_specs_live();
         self.materialize_edges(specs, "[network_graph::clear_manual_changes]");
         // Overlay skip (empty)
         eprintln!(

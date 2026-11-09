@@ -1,10 +1,14 @@
 use std::{pin::Pin, sync::Arc, time::Duration};
 
+use super::{gnmi, path::parse_path, types::*};
 use bytes::Bytes;
 use futures_util::Stream;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use tonic::{metadata::MetadataValue, service::interceptor::InterceptedService, transport::{ClientTlsConfig, Endpoint}};
-use super::{gnmi, types::*, path::parse_path};
+use tonic::{
+    metadata::MetadataValue,
+    service::interceptor::InterceptedService,
+    transport::{ClientTlsConfig, Endpoint},
+};
 
 #[derive(Debug)]
 struct NoTlsVerifier;
@@ -130,17 +134,18 @@ impl GnmiClient {
         })
     }
 
-    pub async fn get(&mut self, path: &str) -> Result<gnmi::GetResponse, tonic::Status> {
+    pub async fn get(&mut self, path: &[&str]) -> Result<gnmi::GetResponse, tonic::Status> {
         self.get_with_models(path, &[]).await
     }
 
     pub async fn get_with_models(
         &mut self,
-        path: &str,
+        paths: &[&str],
         models: &[GnmiModel],
     ) -> Result<gnmi::GetResponse, tonic::Status> {
+        let path: Vec<gnmi::Path> = paths.iter().map(|p| parse_path(p)).collect();
         let request = tonic::Request::new(gnmi::GetRequest {
-            path: vec![parse_path(path)],
+            path,
             r#type: gnmi::get_request::DataType::State as i32,
             encoding: gnmi::Encoding::JsonIetf as i32,
             prefix: None,
@@ -191,13 +196,10 @@ impl GnmiClient {
     }
 }
 
-
-
 mod tests {
-    use futures_util::StreamExt;
-use tokio::{runtime::Runtime, time::Instant};
     use super::*;
-
+    use futures_util::StreamExt;
+    use tokio::{runtime::Runtime, time::Instant};
 
     #[test]
     fn test_gnmi_client() {
@@ -218,9 +220,8 @@ use tokio::{runtime::Runtime, time::Instant};
             let mut client = GnmiClient::new("http://200.1.0.1:57401", "admin", "NokiaSrl1!")
                 .await
                 .unwrap();
-            let path = "/srl_nokia-network-instance:network-instance[name=*]/srl_nokia-network-instance:protocols/srl_nokia-ospf:ospf/srl_nokia-ospf:instance[name=*]/srl_nokia-ospf:area[area-id=*]/srl_nokia-ospf:lsdb";
-            dbg!(parse_path(path));
-            let response = client.get(path).await.unwrap();
+            let paths = vec!["/srl_nokia-network-instance:network-instance[name=*]/srl_nokia-network-instance:protocols/srl_nokia-ospf:ospf/srl_nokia-ospf:instance[name=*]/srl_nokia-ospf:area[area-id=*]/srl_nokia-ospf:lsdb"];
+            let response = client.get(&paths).await.unwrap();
             println!("Get Response: {:?}", &response);
             let json_raw = response.notification[0].update[0]
                 .val

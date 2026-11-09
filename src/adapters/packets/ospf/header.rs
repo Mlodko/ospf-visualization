@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
-use nom::number::complete::{be_u8, be_u16};
-use nom::{IResult, number::complete::be_u32};
+use nom::number::complete::{be_u16, be_u8};
+use nom::{number::complete::be_u32, IResult};
 
 use super::super::span::{Field, Span};
 
@@ -80,6 +80,7 @@ pub enum LsaType {
     Router,
     Network,
     Summary,
+    AsbrSummary,
     AsExternal,
 }
 
@@ -89,6 +90,7 @@ impl Display for LsaType {
             Self::Router => write!(f, "Router (1)"),
             Self::Network => write!(f, "Network (2)"),
             Self::Summary => write!(f, "Summary (3)"),
+            Self::AsbrSummary => write!(f, "ASBR Summary (4)"),
             Self::AsExternal => write!(f, "AS External (5)"),
             _ => write!(f, "Unknown"),
         }
@@ -101,6 +103,7 @@ impl LsaType {
             1 => Ok(Self::Router),
             2 => Ok(Self::Network),
             3 => Ok(Self::Summary),
+            4 => Ok(Self::AsbrSummary),
             5 => Ok(Self::AsExternal),
             _ => Err(()),
         }

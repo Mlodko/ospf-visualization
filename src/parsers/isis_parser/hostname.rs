@@ -67,6 +67,13 @@ pub struct HostnameMap {
 }
 
 impl HostnameMap {
+    pub fn empty() -> Self {
+        Self {
+            map_by_hostname: HashMap::new(),
+            map_by_system_id: HashMap::new(),
+        }
+    }
+
     /// Build a HostnameMap from an iterator of lines (e.g. the entire command output split by '\n').
     /// Non-data lines (headers, empty lines) are ignored.
     /// If multiple entries share the same hostname or system id, the last parsed line wins.

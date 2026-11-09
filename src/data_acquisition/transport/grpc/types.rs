@@ -1,8 +1,11 @@
-use std::{fmt::Display, time::{Duration, SystemTime, UNIX_EPOCH}};
-use anyhow::anyhow;
 use super::{
     gnmi::{self, GetResponse, Notification, SubscribeResponse, typed_value},
     path::extend_path,
+};
+use anyhow::anyhow;
+use std::{
+    fmt::Display,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -18,8 +21,13 @@ impl Timestamp {
     }
 
     pub fn as_system_time(&self) -> Result<SystemTime, anyhow::Error> {
-        let timestamp: u64 = self.0.try_into().map_err(|e| anyhow!("Failed to convert timestamp to u64: {}", e))?;
-        let time = UNIX_EPOCH.checked_add(Duration::from_nanos(timestamp)).ok_or_else(|| anyhow!("Timestamp overflow"))?;
+        let timestamp: u64 = self
+            .0
+            .try_into()
+            .map_err(|e| anyhow!("Failed to convert timestamp to u64: {}", e))?;
+        let time = UNIX_EPOCH
+            .checked_add(Duration::from_nanos(timestamp))
+            .ok_or_else(|| anyhow!("Timestamp overflow"))?;
         Ok(time)
     }
 }
@@ -65,12 +73,16 @@ impl TryFrom<&JsonIetf> for serde_json::Value {
 pub struct JsonIetfUpdate {
     timestamp: Timestamp,
     path: gnmi::Path,
-    value: JsonIetf
+    value: JsonIetf,
 }
 
 impl JsonIetfUpdate {
     fn new(timestamp: Timestamp, path: gnmi::Path, value: JsonIetf) -> Self {
-        Self { timestamp, path, value }
+        Self {
+            timestamp,
+            path,
+            value,
+        }
     }
 
     pub fn timestamp(&self) -> Timestamp {
@@ -87,8 +99,13 @@ impl JsonIetfUpdate {
 }
 
 impl JsonIetfUpdate {
-    pub fn from_update(update: &gnmi::Update, prefix: Option<&gnmi::Path>, timestamp: Timestamp) -> Result<Self, anyhow::Error> {
-        let path = extend_path(prefix, update.path.as_ref()).ok_or_else(|| anyhow!("Failed to extend path"))?;
+    pub fn from_update(
+        update: &gnmi::Update,
+        prefix: Option<&gnmi::Path>,
+        timestamp: Timestamp,
+    ) -> Result<Self, anyhow::Error> {
+        let path = extend_path(prefix, update.path.as_ref())
+            .ok_or_else(|| anyhow!("Failed to extend path"))?;
         let value = update
             .val
             .as_ref()
@@ -125,8 +142,8 @@ impl JsonIetfDelete {
         prefix: Option<&gnmi::Path>,
         timestamp: Timestamp,
     ) -> Result<Self, anyhow::Error> {
-        let path = extend_path(prefix, Some(delete))
-            .ok_or_else(|| anyhow!("Delete path is missing"))?;
+        let path =
+            extend_path(prefix, Some(delete)).ok_or_else(|| anyhow!("Delete path is missing"))?;
         Ok(JsonIetfDelete::new(timestamp, path))
     }
 }
@@ -158,10 +175,14 @@ impl TryFrom<&Notification> for JsonIetfNotification {
     fn try_from(value: &Notification) -> Result<Self, Self::Error> {
         let timestamp = Timestamp::new(value.timestamp);
         let prefix = value.prefix.as_ref();
-        let updates = value.update.iter()
+        let updates = value
+            .update
+            .iter()
             .map(|update| JsonIetfUpdate::from_update(update, prefix, timestamp))
             .collect::<Result<Vec<_>, _>>()?;
-        let deletes = value.delete.iter()
+        let deletes = value
+            .delete
+            .iter()
             .map(|delete| JsonIetfDelete::from_delete(delete, prefix, timestamp))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(JsonIetfNotification {
@@ -177,28 +198,34 @@ impl TryFrom<&GetResponse> for Vec<JsonIetfNotification> {
 
     fn try_from(value: &GetResponse) -> Result<Self, Self::Error> {
         value
-            .notification.iter()
+            .notification
+            .iter()
             .map(|notification| notification.try_into())
             .collect::<Result<Vec<_>, _>>()
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum JsonIetfEvent {
+pub enum JsonIetfSubscriptionEvent {
     Notification(JsonIetfNotification),
     Sync,
     EventError(gnmi::Error),
 }
 
-impl TryFrom<&SubscribeResponse> for JsonIetfEvent {
+impl TryFrom<&SubscribeResponse> for JsonIetfSubscriptionEvent {
     type Error = anyhow::Error;
 
     fn try_from(value: &SubscribeResponse) -> Result<Self, Self::Error> {
         match &value.response {
-            Some(gnmi::subscribe_response::Response::Update(notification)) => 
-                Ok(JsonIetfEvent::Notification(notification.try_into()?)),
-            Some(gnmi::subscribe_response::Response::SyncResponse(_)) => Ok(JsonIetfEvent::Sync),
-            Some(gnmi::subscribe_response::Response::Error(e)) => Ok(JsonIetfEvent::EventError(e.clone())),
+            Some(gnmi::subscribe_response::Response::Update(notification)) => Ok(
+                JsonIetfSubscriptionEvent::Notification(notification.try_into()?),
+            ),
+            Some(gnmi::subscribe_response::Response::SyncResponse(_)) => {
+                Ok(JsonIetfSubscriptionEvent::Sync)
+            }
+            Some(gnmi::subscribe_response::Response::Error(e)) => {
+                Ok(JsonIetfSubscriptionEvent::EventError(e.clone()))
+            }
             None => Err(anyhow!("SubscribeResponse is missing its response")),
         }
     }

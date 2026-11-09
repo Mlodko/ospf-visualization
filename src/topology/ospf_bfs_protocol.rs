@@ -483,19 +483,21 @@ impl OspfBfsProtocol {
             // Rule #5 setup
             let per_area_facets: Vec<PerAreaRouterFacet> = nodes
                 .iter()
-                .map(|node| {
+                .filter_map(|node| {
                     let router = node.info.router().unwrap();
                     let ospf_data = router.protocol_data().unwrap().ospf().unwrap();
-                    let area_id = ospf_data.area_id;
+                    let Some(area_id) = ospf_data.area_id else {
+                        return None;
+                    };
 
                     let pd = ospf_data.payload.router().unwrap();
-                    PerAreaRouterFacet {
+                    Some(PerAreaRouterFacet {
                         area_id,
                         p2p_link_count: pd.p2p_link_count,
                         transit_link_count: pd.transit_link_count,
                         virtual_link_count: pd.virtual_link_count,
                         stub_link_count: pd.stub_link_count,
-                    }
+                    })
                 })
                 .collect();
 
@@ -507,7 +509,7 @@ impl OspfBfsProtocol {
                     .find(|(_, node)| {
                         if let NodeInfo::Router(r) = &node.info {
                             if let Some(ProtocolData::Ospf(data)) = &r.protocol_data {
-                                return data.area_id == Ipv4Addr::new(0, 0, 0, 0);
+                                return data.area_id == Some(Ipv4Addr::new(0, 0, 0, 0));
                             }
                         }
                         false

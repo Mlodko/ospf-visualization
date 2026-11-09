@@ -1,4 +1,5 @@
 use crate::{
+    adapters::packets::ospf::lsa::Lsa as CanonicalLsa,
     network::node::{
         Node, NodeInfo, OspfAdvertisement, OspfData, OspfPayload, OspfRouterPayload,
         OspfVirtualLink, PerAreaRouterFacet, ProtocolData,
@@ -57,7 +58,7 @@ impl Into<ProtocolTopologyError> for LsaError {
 
 #[derive(Debug)]
 pub struct OspfLsdbEntry {
-    area_id: Ipv4Addr,
+    area_id: Option<Ipv4Addr>,
     link_state_id: Ipv4Addr,
     router_id: Ipv4Addr,
     advertisement: Arc<OspfLinkStateAdvertisement>,
@@ -74,7 +75,7 @@ impl TryFrom<OspfRawRow> for OspfLsdbEntry {
                 .1;
 
         Ok(OspfLsdbEntry {
-            area_id: row.area_id,
+            area_id: Some(row.area_id),
             link_state_id: row.link_state_id,
             router_id: row.router_id,
             advertisement: Arc::new(advertisement),
@@ -91,6 +92,7 @@ impl TryInto<Node> for OspfLsdbEntry {
             OspfLinkStateAdvertisement::RouterLinks(_) => {
                 NodeInfo::Router(parse_lsa_type_1_to_router(&self)?)
             }
+
             OspfLinkStateAdvertisement::NetworkLinks(_) => {
                 NodeInfo::Network(parse_lsa_type_2_to_network(&self)?)
             }
@@ -109,6 +111,28 @@ impl TryInto<Node> for OspfLsdbEntry {
         };
 
         Ok(Node::new(node_info, Some(label)))
+    }
+}
+
+pub fn canonical_lsa_to_node(
+    area_id: Option<Ipv4Addr>,
+    lsa: CanonicalLsa,
+) -> Result<Option<Node>, LsaError> {
+    let advertisement = OspfLinkStateAdvertisement::parse(&lsa.raw)
+        .map_err(|_| LsaError::WrongDataType)?
+        .1;
+    let entry = OspfLsdbEntry {
+        area_id,
+        link_state_id: Ipv4Addr::from(lsa.header.ls_id.value.0),
+        router_id: Ipv4Addr::from(lsa.header.adv_router.value.0),
+        advertisement: Arc::new(advertisement),
+        raw_lsa_bytes: Arc::new(lsa.raw),
+    };
+
+    match entry.try_into() {
+        Ok(node) => Ok(Some(node)),
+        Err(LsaError::InvalidLsaType) => Ok(None),
+        Err(error) => Err(error),
     }
 }
 
@@ -173,13 +197,17 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
         stub_link_count,
         virtual_link_count,
         link_metrics,
-        per_area_facets: vec![PerAreaRouterFacet {
-            area_id: lsa.area_id,
-            p2p_link_count,
-            transit_link_count,
-            stub_link_count,
-            virtual_link_count,
-        }],
+        per_area_facets: lsa
+            .area_id
+            .map(|area_id| PerAreaRouterFacet {
+                area_id,
+                p2p_link_count,
+                transit_link_count,
+                stub_link_count,
+                virtual_link_count,
+            })
+            .into_iter()
+            .collect(),
         virtual_links,
     };
 
@@ -346,6 +374,25 @@ mod tests {
     use crate::parsers::ospf_parser::source::OspfDataSource;
 
     use super::*;
+
+    #[test]
+    fn canonical_lsa_converts_to_node() {
+        let line = include_str!("../../adapters/packets/ospf/resources/lsa_dump")
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap();
+        let bytes = hex::decode(line.split_whitespace().collect::<String>()).unwrap();
+        let (_, lsa) = crate::adapters::packets::ospf::lsa::Lsa::parse(&bytes).unwrap();
+
+        let node = canonical_lsa_to_node(Some("0.0.0.0".parse().unwrap()), lsa)
+            .unwrap()
+            .unwrap();
+
+        assert!(matches!(
+            node.info,
+            crate::network::node::NodeInfo::Router(_) | crate::network::node::NodeInfo::Network(_)
+        ));
+    }
 
     #[tokio::test]
     async fn test_parse_lsas_to_lsdb_entries() {

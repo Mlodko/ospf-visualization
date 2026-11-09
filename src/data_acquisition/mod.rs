@@ -1,3 +1,5 @@
+use crate::data_acquisition::transport::grpc::prelude::*;
+
 pub mod transport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,5 +13,6 @@ pub enum TransportProtocol {
 pub enum TransportPayload {
     Snmp(transport::snmp::PortableSnmpTableRow),
     Ssh(String),
-    Grpc(String),
+    GnmiGet(Vec<JsonIetfNotification>),
+    GnmiSub(JsonIetfSubscriptionEvent),
 }

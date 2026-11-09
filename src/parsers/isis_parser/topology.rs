@@ -1,9 +1,12 @@
 use crate::{
-    data_acquisition::transport::ssh::SshClient,
+    data_acquisition::transport::{grpc::client::GnmiClient, ssh::SshClient},
     parsers::isis_parser::{
         bfs_protocol::JsonIsisBfsProtocol, protocol::JsonIsisProtocol, ssh_source::IsisSshSource,
     },
-    topology::protocol::{AcquisitionError, Topology},
+    topology::{
+        protocol::{AcquisitionError, RoutingMessageTopology, Topology},
+        routing_source::GnmiRoutingMessageSource,
+    },
 };
 
 pub type IsIsTopology = Topology<JsonIsisProtocol, IsisSshSource>;
@@ -29,6 +32,30 @@ impl IsIsTopology {
 }
 
 pub type IsIsBfsTopology = Topology<JsonIsisBfsProtocol, IsisSshSource>;
+
+pub type NokiaGnmiIsisTopology = RoutingMessageTopology<
+    JsonIsisProtocol,
+    GnmiRoutingMessageSource<crate::adapters::vendors::nokia::gnmi_isis::NokiaGnmiIsisAdapter>,
+>;
+
+impl NokiaGnmiIsisTopology {
+    pub fn from_gnmi_client(
+        client: GnmiClient,
+        source_id: crate::network::router::RouterId,
+        interface_stats: Vec<crate::network::router::InterfaceStats>,
+    ) -> Self {
+        let source = GnmiRoutingMessageSource::new(
+            client,
+            crate::adapters::vendors::nokia::gnmi_isis::NokiaGnmiIsisAdapter,
+            source_id,
+            interface_stats,
+        );
+        Self::new(
+            JsonIsisProtocol::new(crate::parsers::isis_parser::hostname::HostnameMap::empty()),
+            source,
+        )
+    }
+}
 
 impl IsIsBfsTopology {
     pub async fn new_from_ssh_client(mut client: SshClient) -> Result<Self, AcquisitionError> {
