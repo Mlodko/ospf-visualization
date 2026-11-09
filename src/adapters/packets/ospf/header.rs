@@ -34,25 +34,25 @@ impl Options {
     pub fn e_bit(&self) -> bool {
         self.0 & 0b0000_0010 != 0
     }
-    
+
     /// Returns the value of the MC-bit.
     /// This bit describes whether IP multicast datagrams are forwarded according to the specifications in Ref18.
     pub fn mc_bit(&self) -> bool {
         self.0 & 0b0000_0100 != 0
     }
-    
+
     /// Returns the value of the N/P-bit.
     /// This bit describes the handling of Type-7 LSAs, as specified in Ref19.
     pub fn np_bit(&self) -> bool {
         self.0 & 0b0000_1000 != 0
     }
-    
+
     /// Returns the value of the EA-bit
     /// This bit describes the router's willingness to receive and forward External-Attributes-LSAs, as specified in [Ref20].
     pub fn ea_bit(&self) -> bool {
         self.0 & 0b0001_0000 != 0
     }
-    
+
     /// Returns the value of the DC-bit.
     /// This bit describes the router's willingness to receive and forward Demand Circuit LSAs, as specified in [Ref21].
     pub fn dc_bit(&self) -> bool {
@@ -80,6 +80,7 @@ pub enum LsaType {
     Router,
     Network,
     Summary,
+    AsbrSummary,
     AsExternal,
 }
 
@@ -89,8 +90,8 @@ impl Display for LsaType {
             Self::Router => write!(f, "Router (1)"),
             Self::Network => write!(f, "Network (2)"),
             Self::Summary => write!(f, "Summary (3)"),
+            Self::AsbrSummary => write!(f, "ASBR Summary (4)"),
             Self::AsExternal => write!(f, "AS External (5)"),
-            _ => write!(f, "Unknown"),
         }
     }
 }
@@ -101,6 +102,7 @@ impl LsaType {
             1 => Ok(Self::Router),
             2 => Ok(Self::Network),
             3 => Ok(Self::Summary),
+            4 => Ok(Self::AsbrSummary),
             5 => Ok(Self::AsExternal),
             _ => Err(()),
         }
@@ -173,7 +175,7 @@ impl LsaHeader {
             Span::new(full_len - i.len() - 2, full_len - i.len()),
             length,
         );
-        
+
         let consumed_bytes = full_len - i.len();
         let span = Span::new(0, consumed_bytes);
 
@@ -188,7 +190,7 @@ impl LsaHeader {
                 seq_num,
                 checksum,
                 length,
-                span
+                span,
             },
         ))
     }

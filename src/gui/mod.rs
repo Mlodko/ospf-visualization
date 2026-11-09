@@ -1,5 +1,4 @@
 pub mod actions;
-pub mod app;
 pub mod autopoll;
 pub mod edge_anim;
 pub mod edge_shape;

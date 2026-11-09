@@ -13,7 +13,6 @@ use crate::{
     },
     network::{
         edge::Edge,
-        network_graph::NetworkGraph,
         node::{Node, NodeInfo},
     },
 };

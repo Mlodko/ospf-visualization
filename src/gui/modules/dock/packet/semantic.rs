@@ -1,9 +1,15 @@
 use std::sync::{Arc, Mutex};
 
-use crate::gui::modules::dock::{DockActions, DockPanel, DockPanelKind, packet::{state::{Packet, PacketInspectorState}, ui::SemanticUi}};
+use crate::gui::modules::dock::{
+    DockActions, DockPanel, DockPanelKind,
+    packet::{
+        state::{Packet, PacketInspectorState},
+        ui::SemanticUi,
+    },
+};
 
 pub struct SemanticPacketInspector {
-    state: Arc<Mutex<PacketInspectorState>>
+    state: Arc<Mutex<PacketInspectorState>>,
 }
 
 impl SemanticPacketInspector {
@@ -17,12 +23,17 @@ impl DockPanel for SemanticPacketInspector {
         "Semantic Packet Inspector".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, actions: &mut dyn crate::gui::actions::AppActions, dock_actions: &mut dyn DockActions) {
+    fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        _actions: &mut dyn crate::gui::actions::AppActions,
+        _dock_actions: &mut dyn DockActions,
+    ) {
         let packet = {
             let state = self.state.lock().unwrap();
             state.packet().cloned()
         };
-        
+
         match packet {
             Some(Packet::Ospf(lsa)) => {
                 lsa.ui_semantic(ui, &mut |span| {
@@ -39,7 +50,7 @@ impl DockPanel for SemanticPacketInspector {
             }
         }
     }
-    
+
     fn kind(&self) -> DockPanelKind {
         DockPanelKind::PacketInspectorSemantic
     }

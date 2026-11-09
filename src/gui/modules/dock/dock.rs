@@ -10,7 +10,6 @@ use crate::gui::modules::dock::packet::bytes::BytesPacketInspector;
 use crate::gui::modules::dock::packet::semantic::SemanticPacketInspector;
 use crate::gui::modules::dock::packet::state::PacketInspectorState;
 use crate::gui::modules::dock::sources::SourcesPanel;
-use crate::gui::new_app::AppPanel;
 
 /// Main dock panel for the GUI. Defines a dockable area in the GUI and holds its contents.
 pub struct Dock {
@@ -162,7 +161,7 @@ impl DockActionQueue {
         self.requests.pop()
     }
 
-    fn drain(&mut self) -> Drain<DockRequest> {
+    fn drain(&mut self) -> Drain<'_, DockRequest> {
         self.requests.drain(..)
     }
 }

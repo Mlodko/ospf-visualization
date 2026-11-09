@@ -67,6 +67,8 @@
             perf
             protobuf
             protobufc
+            containerlab
+            gnmic
             # libwayland  # Uncomment if you need the static lib
             # nushell     # Uncomment to use nushell as login shell
             # u-config    # Uncomment if you want this config tool

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::data_aquisition::core::LinkStateValue;
+use super::core::LinkStateValue;
 
 use super::core::RawRouterData;
 
@@ -11,6 +11,7 @@ use std::{
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone)]
 pub enum MessageType {
     GetRequest,
@@ -388,6 +389,32 @@ impl SnmpTableRow<'_> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct PortableSnmpTableRow {
+    pub table_oid_prefix: Vec<u64>,
+    pub row_index_suffix: Vec<u64>,
+    pub columns: HashMap<Vec<u64>, LinkStateValue>,
+}
+
+impl<'a> From<SnmpTableRow<'a>> for PortableSnmpTableRow {
+    fn from(value: SnmpTableRow<'a>) -> Self {
+        Self {
+            table_oid_prefix: value.table_oid_prefix.iter()
+            .expect("Table OID prefix component(s) don't fit into u64, should never happen")
+            .collect(),
+            row_index_suffix: value.row_index_suffix.iter()
+            .expect("Table OID prefix component(s) don't fit into u64, should never happen")
+            .collect(),
+            columns: value.columns.into_iter().map(|(k, v)| (
+                k.iter().expect("Table OID prefix component(s) don't fit into u64, should never happen")
+                .collect(),
+                v))
+            .collect(),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     // moved specific net imports into the test where they are used to silence warnings
 
@@ -404,12 +431,20 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_connect() {
         let session = setup().await;
         assert!(session.is_ok());
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_get_data() {
         let session = setup().await.expect("Failed to setup session");
         let mut lock = session.lock().await;
@@ -419,6 +454,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_get_ospf_data() {
         let session = setup().await.expect("Failed to setup session");
         let mut lock = session.lock().await;
@@ -437,6 +476,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_get_table() {
         use std::net::{IpAddr, Ipv4Addr};
         let mut client = SnmpClient::new(
@@ -478,8 +521,12 @@ mod tests {
             dbg!(row);
         }
     }
-    
+
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_snmp_walk() {
         use std::net::{IpAddr, Ipv4Addr};
         let mut client = SnmpClient::new(
@@ -489,11 +536,7 @@ mod tests {
             None,
         );
         let oid = Oid::from_str("1.3.6.1.2.1.4.31.3").unwrap();
-        let query = client.query()
-            .await
-            .unwrap()
-            .oid(oid)
-            .walk();
+        let query = client.query().await.unwrap().oid(oid).walk();
 
         let results = query.execute().await.unwrap();
 

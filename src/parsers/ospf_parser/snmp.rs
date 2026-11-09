@@ -4,8 +4,8 @@ use std::str::FromStr;
 use snmp2::Oid;
 
 use crate::{
-    data_aquisition::{
-        core::{LinkStateValue},
+    data_acquisition::transport::{
+        core::LinkStateValue,
         snmp::{SnmpClient, SnmpTableRow},
     },
     parsers::ospf_parser::{

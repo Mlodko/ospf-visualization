@@ -1,6 +1,6 @@
 mod dock;
-pub mod sources;
-pub mod packet;
 pub mod node_inspector;
+pub mod packet;
+pub mod sources;
 
 pub use dock::*;

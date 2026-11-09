@@ -1,4 +1,7 @@
-use std::{collections::{HashMap, HashSet}, net::Ipv4Addr};
+use std::{
+    collections::{HashMap, HashSet},
+    net::Ipv4Addr,
+};
 
 use eframe::egui::Color32;
 use egui::Pos2;
@@ -8,7 +11,7 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    gui::{app, edge_shape::NetworkGraphEdgeShape, node_shape::NetworkGraphNodeShape},
+    gui::{edge_shape::NetworkGraphEdgeShape, node_shape::NetworkGraphNodeShape},
     network::{
         edge::{Edge, EdgeKind, EdgeMetric, ManualEdgeSpec, UndirectedEdgeKey},
         node::{IsIsData, Node, NodeInfo, OspfData, OspfPayload, ProtocolData},
@@ -17,8 +20,6 @@ use crate::{
     },
     parsers::isis_parser::core_lsp::Tlv,
 };
-
-const IF_SKIP_FUNCTIONALLY_P2P_NETWORKS: bool = false;
 
 /// A protocol-agnostic graph wrapper used by the GUI.
 ///
@@ -36,6 +37,8 @@ pub struct NetworkGraph {
         NetworkGraphEdgeShape,
     >,
     pub node_id_to_index_map: HashMap<Uuid, NodeIndex>,
+    source_nodes: Vec<Node>,
+    collapse_p2p_networks: bool,
     manual_edges: HashMap<UndirectedEdgeKey, ManualEdgeSpec>,
     manual_removed_edges: HashSet<UndirectedEdgeKey>,
 }
@@ -45,6 +48,8 @@ impl Default for NetworkGraph {
         Self {
             graph: Graph::new(StableGraph::new()),
             node_id_to_index_map: HashMap::new(),
+            source_nodes: Vec::new(),
+            collapse_p2p_networks: true,
             manual_edges: HashMap::new(),
             manual_removed_edges: HashSet::new(),
         }
@@ -55,6 +60,7 @@ impl NetworkGraph {
     /// Build a new NetworkGraph from a list of protocol-agnostic nodes.
     /// This method avoids panics by validating lookups and ignores incomplete references.
     pub fn build_new(nodes: Vec<Node>) -> Self {
+        let source_nodes = nodes.clone();
         let (mut graph, node_id_to_index_map) = {
             let mut graph = StableGraph::new();
             let mut node_id_to_index_map = HashMap::new();
@@ -68,7 +74,7 @@ impl NetworkGraph {
 
         // Collect edge specs & networks to remove via helper
         let (edge_specs, node_indices_to_remove) =
-            Self::collect_edge_specs_stable(&graph, &node_id_to_index_map);
+            Self::collect_edge_specs_stable(&graph, &node_id_to_index_map, true);
 
         for node_index in node_indices_to_remove {
             let _ = graph.remove_node(node_index);
@@ -200,8 +206,6 @@ impl NetworkGraph {
                     NodeInfo::Router(_) => "Router".to_string(),
                 }
             };
-            let theme = app::get_theme();
-
             // Set label; color will be derived by NetworkGraphNodeShape via theme visuals
             node.set_label(label);
         }
@@ -209,8 +213,18 @@ impl NetworkGraph {
         Self {
             graph,
             node_id_to_index_map,
+            source_nodes,
+            collapse_p2p_networks: true,
             ..Default::default()
         }
+    }
+
+    pub fn collapse_p2p_networks(&self) -> bool {
+        self.collapse_p2p_networks
+    }
+
+    pub fn set_collapse_p2p_networks(&mut self, enabled: bool) {
+        self.collapse_p2p_networks = enabled;
     }
 
     /// Reconcile the existing graph in place to match the provided nodes (by UUID).
@@ -219,6 +233,7 @@ impl NetworkGraph {
     /// - Removes vanished nodes
     /// - Rebuilds edges from current nodes (router -> network)
     pub fn reconcile(&mut self, desired_nodes: Vec<Node>) {
+        self.source_nodes = desired_nodes.clone();
         let mut rng = rand::rng();
 
         // 1) Desired set and quick lookup
@@ -264,7 +279,7 @@ impl NetworkGraph {
                     let router_color = Color32::BLUE;
                     let network_color = Color32::GREEN;
                     let inter_area_color = Color32::LIGHT_GREEN;
-                    let node_color = if desired.is_inter_area() {
+                    let _node_color = if desired.is_inter_area() {
                         inter_area_color
                     } else {
                         match &desired.info {
@@ -284,13 +299,13 @@ impl NetworkGraph {
                 let pos = Pos2::new(rng.random_range(0.0..40.0), rng.random_range(0.0..40.0));
                 if let Some(n) = self.graph.node_mut(idx) {
                     n.set_location(pos);
-                    
+
                     let payload = n.payload();
 
                     let router_color = Color32::BLUE;
                     let network_color = Color32::GREEN;
                     let inter_area_color = Color32::LIGHT_GREEN;
-                    let node_color = if payload.is_inter_area() {
+                    let _node_color = if payload.is_inter_area() {
                         inter_area_color
                     } else {
                         match &payload.info {
@@ -314,7 +329,12 @@ impl NetworkGraph {
 
         // 4) Rebuild edges using helper (membership + logical reachability)
         self.clear_all_edges();
-        let edge_specs = self.collect_edge_specs_live();
+        let (edge_specs, collapsed_networks) = self.collect_edge_specs_live();
+        for network_id in collapsed_networks {
+            if let Some(idx) = self.node_id_to_index_map.remove(&network_id) {
+                let _ = self.graph.remove_node(idx);
+            }
+        }
         self.materialize_edges(edge_specs, "[network_graph::reconcile]");
         self.apply_overlay_after_reconcile();
     }
@@ -332,6 +352,7 @@ impl NetworkGraph {
     fn collect_edge_specs_stable(
         graph: &StableGraph<Node, Edge, Directed, DefaultIx>,
         id_map: &HashMap<Uuid, NodeIndex>,
+        collapse_p2p_networks: bool,
     ) -> (Vec<(NodeIndex, Uuid, Uuid, EdgeKind)>, Vec<NodeIndex>) {
         let mut node_indices_to_remove = Vec::new();
         let mut specs: Vec<(NodeIndex, Uuid, Uuid, EdgeKind)> = Vec::new();
@@ -341,8 +362,15 @@ impl NetworkGraph {
             if let NodeInfo::Network(network) = &graph[net_index].info {
                 let net_uuid = graph[net_index].id;
 
-                if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
-                    // Optionally collapse; current policy: just mark for removal
+                if network.attached_routers.len() == 2 && collapse_p2p_networks {
+                    let first = network.attached_routers[0].to_uuidv5();
+                    let second = network.attached_routers[1].to_uuidv5();
+                    if let (Some(&first_idx), Some(_)) = (id_map.get(&first), id_map.get(&second)) {
+                        let kind = EdgeKind::Membership;
+                        if seen.insert((first, second, kind)) {
+                            specs.push((first_idx, first, second, kind));
+                        }
+                    }
                     node_indices_to_remove.push(net_index);
                     continue;
                 }
@@ -388,15 +416,28 @@ impl NetworkGraph {
 
     /// Helper: collect edge specs from the live egui_graphs graph during reconcile
     /// Returns a `Vec<(graph source node index, source uuid, destination uuid, EdgeKind)>`
-    fn collect_edge_specs_live(&self) -> Vec<(NodeIndex, Uuid, Uuid, EdgeKind)> {
+    fn collect_edge_specs_live(&self) -> (Vec<(NodeIndex, Uuid, Uuid, EdgeKind)>, Vec<Uuid>) {
         let mut specs = Vec::new();
+        let mut collapsed_networks = Vec::new();
         let mut seen: HashSet<(Uuid, Uuid, EdgeKind)> = HashSet::new();
 
         for (net_uuid, &net_idx) in self.node_id_to_index_map.iter() {
             if let Some(net_node) = self.graph.node(net_idx) {
                 let payload = net_node.payload();
                 if let NodeInfo::Network(network) = &payload.info {
-                    if network.attached_routers.len() == 2 && IF_SKIP_FUNCTIONALLY_P2P_NETWORKS {
+                    if network.attached_routers.len() == 2 && self.collapse_p2p_networks {
+                        let first = network.attached_routers[0].to_uuidv5();
+                        let second = network.attached_routers[1].to_uuidv5();
+                        if let (Some(&first_idx), Some(_)) = (
+                            self.node_id_to_index_map.get(&first),
+                            self.node_id_to_index_map.get(&second),
+                        ) {
+                            let kind = EdgeKind::Membership;
+                            if seen.insert((first, second, kind)) {
+                                specs.push((first_idx, first, second, kind));
+                            }
+                        }
+                        collapsed_networks.push(*net_uuid);
                         continue;
                     }
 
@@ -434,20 +475,28 @@ impl NetworkGraph {
                         */
                         if let OspfPayload::SummaryNetwork(pd) = &data.payload {
                             let abr_id = &pd.origin_abr;
-                            let abr_uuid = self.graph.nodes_iter()
-                                .find_map(|(_, node)| {
-                                    let node = node.payload();
-                                    if let Some(router) = node.info.router() {
-                                        if router.id == abr_id.clone() {
-                                            return Some(node.id);
-                                        }
+                            let abr_uuid = self.graph.nodes_iter().find_map(|(_, node)| {
+                                let node = node.payload();
+                                if let Some(router) = node.info.router() {
+                                    if router.id == abr_id.clone() {
+                                        return Some(node.id);
                                     }
-                                    None
-                                });
+                                }
+                                None
+                            });
                             if let Some(abr_uuid) = abr_uuid {
-                                if seen.insert((abr_uuid, *net_uuid, EdgeKind::LogicalReachability)) {
-                                    let abr_idx = self.node_id_to_index_map.get(&abr_uuid).expect("ABR not found");
-                                    specs.push((*abr_idx, abr_uuid, *net_uuid, EdgeKind::LogicalReachability));
+                                if seen.insert((abr_uuid, *net_uuid, EdgeKind::LogicalReachability))
+                                {
+                                    let abr_idx = self
+                                        .node_id_to_index_map
+                                        .get(&abr_uuid)
+                                        .expect("ABR not found");
+                                    specs.push((
+                                        *abr_idx,
+                                        abr_uuid,
+                                        *net_uuid,
+                                        EdgeKind::LogicalReachability,
+                                    ));
                                 }
                             }
                         }
@@ -455,7 +504,7 @@ impl NetworkGraph {
                 }
             }
         }
-        
+
         // Handle exceptions
         {
             // OSPF Virtual Links
@@ -463,9 +512,9 @@ impl NetworkGraph {
                 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
                 struct VirtualLink {
                     a: Ipv4Addr,
-                    b: Ipv4Addr
+                    b: Ipv4Addr,
                 }
-                
+
                 impl VirtualLink {
                     fn new(a: Ipv4Addr, b: Ipv4Addr) -> Self {
                         // This is done to prevent (A, B) and (B, A) being different in the hashset.
@@ -476,21 +525,26 @@ impl NetworkGraph {
                         }
                     }
                 }
-                
+
                 let mut visited_links = HashSet::new();
-                let links = self.graph.nodes_iter()
-                    .filter_map(|(node_idx, node)| {
-                        let node = node.payload();
-                        if let Some(router) = node.info.router() {
-                            if let Some(data) = router.protocol_data() {
-                                if let Some(ospf_data) = data.ospf() {
-                                    if let OspfPayload::Router(router_payload) = &ospf_data.payload {
-                                        for link in &router_payload.virtual_links {
-                                            let other_router_id = &link.peer_router_id;
-                                            let link = VirtualLink::new(router.id.ipv4().unwrap(), other_router_id.ipv4().unwrap());
-                                            if visited_links.insert(link) {
-                                                // Find the other router in the graph by router id
-                                                if let Some(other_uuid) = self.graph.nodes_iter().find_map(|(_, other_node)| {
+                let links = self.graph.nodes_iter().filter_map(|(node_idx, node)| {
+                    let node = node.payload();
+                    if let Some(router) = node.info.router() {
+                        if let Some(data) = router.protocol_data() {
+                            if let Some(ospf_data) = data.ospf() {
+                                if let OspfPayload::Router(router_payload) = &ospf_data.payload {
+                                    for link in &router_payload.virtual_links {
+                                        let other_router_id = &link.peer_router_id;
+                                        let link = VirtualLink::new(
+                                            router.id.ipv4().unwrap(),
+                                            other_router_id.ipv4().unwrap(),
+                                        );
+                                        if visited_links.insert(link) {
+                                            // Find the other router in the graph by router id
+                                            if let Some(other_uuid) = self
+                                                .graph
+                                                .nodes_iter()
+                                                .find_map(|(_, other_node)| {
                                                     let other_node = other_node.payload();
                                                     if let Some(router) = other_node.info.router() {
                                                         if router.id == *other_router_id {
@@ -498,22 +552,28 @@ impl NetworkGraph {
                                                         }
                                                     }
                                                     None
-                                                }) {
-                                                    return Some((node_idx, node.id, other_uuid, EdgeKind::VirtualAdjacency));
-                                                }
+                                                })
+                                            {
+                                                return Some((
+                                                    node_idx,
+                                                    node.id,
+                                                    other_uuid,
+                                                    EdgeKind::VirtualAdjacency,
+                                                ));
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        None
-                    });
+                    }
+                    None
+                });
                 specs.extend(links);
             }
         }
 
-        specs
+        (specs, collapsed_networks)
     }
 
     /// Helper: materialize edge specs into the live graph
@@ -553,7 +613,7 @@ impl NetworkGraph {
         eprintln!("{log_tag} materialized {added} edges");
     }
 
-    fn membership_metric(&self, src_idx: NodeIndex, src_uuid: Uuid, dst_uuid: Uuid) -> EdgeMetric {
+    fn membership_metric(&self, src_idx: NodeIndex, _src_uuid: Uuid, dst_uuid: Uuid) -> EdgeMetric {
         let src_node = match self.graph.node(src_idx) {
             Some(n) => n.payload(),
             None => return EdgeMetric::None,
@@ -633,10 +693,10 @@ impl NetworkGraph {
 
     fn ospf_logical_reachability_metric(
         &self,
-        src_idx: NodeIndex,
+        _src_idx: NodeIndex,
         src_uuid: Uuid,
-        dst_uuid: Uuid,
-        ospf_data: &OspfData,
+        _dst_uuid: Uuid,
+        _ospf_data: &OspfData,
         src_router: &Router,
     ) -> EdgeMetric {
         let dst_idx = match self.node_id_to_index_map.get(&src_uuid) {
@@ -736,7 +796,7 @@ impl NetworkGraph {
 
         // Rebuild base edges
         self.clear_all_edges();
-        let specs = self.collect_edge_specs_live();
+        let (specs, _) = self.collect_edge_specs_live();
         self.materialize_edges(specs, "[network_graph::clear_manual_changes]");
         // Overlay skip (empty)
         eprintln!(

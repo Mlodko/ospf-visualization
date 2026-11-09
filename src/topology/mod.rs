@@ -6,19 +6,19 @@ This module defines the GUI-facing topology provider interface and concrete impl
 Structure:
 - `source`: A small async trait (`TopologySource`) that returns protocol-agnostic nodes,
             plus a minimal error type used by the GUI layer.
-- `ospf`: Generic OSPF topology that consumes any `OspfDataSource` (with a
-          convenience alias `OspfSnmpTopology` for SNMP).
+- `ospf_protocol`: Active gNMI topology plus deprecated SNMP compatibility aliases.
 
 Re-exports:
 - `TopologySource`, `TopologyError`, and `TopologyResult` for easy consumption by callers.
-- `OspfSnmpTopology` as the default OSPF-over-SNMP topology provider.
+- `NokiaGnmiOspfTopology` as the primary OSPF topology provider.
 */
 
-pub mod ospf_protocol;
 pub mod ospf_bfs_protocol;
+pub mod ospf_protocol;
 pub mod protocol;
+pub mod routing_source;
 pub mod source;
 pub mod store;
 
-pub use ospf_protocol::{OspfSnmpTopology};
+pub use ospf_protocol::NokiaGnmiOspfTopology;
 pub use source::TopologySource;

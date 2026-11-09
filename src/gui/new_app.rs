@@ -1,24 +1,16 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
-};
+use std::{cell::RefCell, collections::HashMap, net::Ipv4Addr, sync::Arc};
 
 use catppuccin_egui::Theme;
-use eframe::CreationContext;
 use egui::{CentralPanel, CollapsingHeader, Context, Pos2, SidePanel, TopBottomPanel, Ui};
-use egui_dock::DockState;
 use egui_graphs::{
     FruchtermanReingoldWithCenterGravity, FruchtermanReingoldWithCenterGravityState,
 };
 use ipnetwork::IpNetwork;
-use tokio::{runtime::Runtime, sync::Mutex, time::Instant};
-use usvg::layout;
+use tokio::{runtime::Runtime, sync::Mutex};
 use uuid::Uuid;
 
 use crate::{
-    data_aquisition::{snmp::SnmpClient, ssh::SshClient},
+    data_acquisition::transport::grpc::client::GnmiClient,
     gui::{
         actions::{
             AppActions, ConnectActions, ConnectStatus, GraphActions, SourceActions, SourceSummary,
@@ -34,23 +26,23 @@ use crate::{
                     state::PacketInspectorState,
                 },
             },
-            graph::GraphPanel, theme::ThemeSelect,
-        }, tools::{path_tool::PathTool, select_tool::SelectTool, tray::ToolsTray},
+            graph::GraphPanel,
+            theme::ThemeSelect,
+        },
+        tools::{path_tool::PathTool, select_tool::SelectTool, tray::ToolsTray},
     },
     network::{
         edge::Edge,
         network_graph::NetworkGraph,
         node::{Node, NodeInfo},
-        router::{InterfaceStats, RouterId},
+        router::RouterId,
     },
-    parsers::isis_parser::topology::IsIsBfsTopology,
     topology::{
-        ospf_protocol::OspfBfsSnmpTopology,
+        NokiaGnmiOspfTopology,
         source::SnapshotSource,
         store::{MergeConfig, SourceId, TopologyStore},
     },
 };
-
 
 thread_local! {
     static THEME: RefCell<ThemeId> = RefCell::new(ThemeId::Macchiato);
@@ -73,16 +65,17 @@ impl ThemeId {
             ThemeId::Mocha => "Mocha",
         }
     }
-    
+
     pub fn all() -> impl Iterator<Item = ThemeId> {
         [
             ThemeId::Macchiato,
             ThemeId::Latte,
             ThemeId::Frappe,
             ThemeId::Mocha,
-        ].into_iter()
+        ]
+        .into_iter()
     }
-    
+
     pub fn theme(&self) -> Theme {
         match self {
             ThemeId::Macchiato => catppuccin_egui::MACCHIATO,
@@ -149,10 +142,8 @@ struct App {
 
     // GUI modules
     connections_panel: ConnectionsPanel,
-    ssh_connect_status: ConnectStatus,
-    ssh_connect_result: Arc<Mutex<Option<PollResult>>>,
-    snmp_connect_status: ConnectStatus,
-    snmp_connect_result: Arc<Mutex<Option<PollResult>>>,
+    gnmi_connect_status: ConnectStatus,
+    gnmi_connect_result: Arc<Mutex<Option<PollResult>>>,
     graph_panel: GraphPanel,
     bottom_dock: Dock,
     tool_tray: ToolsTray,
@@ -163,25 +154,23 @@ struct App {
 impl App {
     async fn new(cc: &eframe::CreationContext<'_>, runtime: Arc<Runtime>) -> anyhow::Result<Self> {
         let _ = cc;
-        let snmp_client = crate::data_aquisition::snmp::SnmpClient::default();
-        let ssh_client = SshClient::new_with_password(
-            "client".to_string(),
-            "localhost".to_string(),
-            "password".to_string(),
-            2221,
-        );
-        let topo = IsIsBfsTopology::new_from_ssh_client(ssh_client)
+        let client = GnmiClient::new("http://200.1.0.1:57401", "admin", "NokiaSrl1!")
             .await
-            .unwrap();
-        let topo: Box<dyn SnapshotSource> =
-            //Box::new(OspfSnmpTopology::from_snmp_client(snmp_client));
-            Box::new(topo);
+            .map_err(|e| anyhow::anyhow!("Failed to connect to gNMI: {}", e))?;
+        let topo = NokiaGnmiOspfTopology::from_gnmi_client(
+            client,
+            RouterId::Ipv4(Ipv4Addr::new(200, 1, 0, 1)),
+            vec![],
+        );
+        let topo: Box<dyn SnapshotSource> = Box::new(topo);
         let store = TopologyStore::default();
 
         let merge_config = MergeConfig::default();
 
         let mut layout_state = LayoutState::default();
-        layout_state.base.k_scale = 0.2;
+        layout_state.base.k_scale = 0.3;
+        layout_state.base.c_attract = 0.55;
+        layout_state.base.c_repulse = 1.1;
 
         let autopoller = AutoPoller::new(None, runtime.clone());
 
@@ -203,11 +192,9 @@ impl App {
             autopoller_enabled_gui: false,
 
             connections_panel: ConnectionsPanel::default(),
-            ssh_connect_status: ConnectStatus::Idle,
-            ssh_connect_result: Arc::new(Mutex::new(None)),
-            snmp_connect_status: ConnectStatus::Idle,
-            snmp_connect_result: Arc::new(Mutex::new(None)),
-            
+            gnmi_connect_status: ConnectStatus::Idle,
+            gnmi_connect_result: Arc::new(Mutex::new(None)),
+
             tool_tray: ToolsTray::new(Pos2::ZERO, vec![Box::new(SelectTool), Box::new(PathTool)]),
 
             merge_config,
@@ -218,135 +205,83 @@ impl App {
 }
 
 impl ConnectActions for App {
-    fn ssh_connect_status(&self) -> &ConnectStatus {
-        &self.ssh_connect_status
+    fn gnmi_connect_status(&self) -> &ConnectStatus {
+        &self.gnmi_connect_status
     }
 
-    fn clear_ssh_connect_status(&mut self) {
-        self.ssh_connect_status = ConnectStatus::Idle;
+    fn clear_gnmi_connect_status(&mut self) {
+        self.gnmi_connect_status = ConnectStatus::Idle;
     }
 
-    fn snmp_connect_status(&self) -> &ConnectStatus {
-        &self.snmp_connect_status
-    }
-
-    fn clear_snmp_connect_status(&mut self) {
-        self.snmp_connect_status = ConnectStatus::Idle;
-    }
-
-    fn connect_ssh(
+    fn connect_gnmi(
         &mut self,
-        host: String,
-        port: u16,
+        uri: String,
         username: String,
         password: String,
+        source_id: String,
+        interface_stats: String,
+        protocol: ProtocolKind,
         clear_other_sources: bool,
     ) {
-        println!(
-            "Connecting to {}:{}@{}:{}",
-            &username, &password, &host, port
-        );
-        self.ssh_connect_status = ConnectStatus::Pending;
+        self.gnmi_connect_status = ConnectStatus::Pending;
 
         if clear_other_sources {
             self.store = TopologyStore::default();
             self.autopoller.clear_source_specs();
         }
 
-        let result_slot = self.ssh_connect_result.clone();
+        let result_slot = self.gnmi_connect_result.clone();
         let runtime = self.runtime.clone();
-
-        let host_for_spec = host.clone();
-        let username_for_spec = username.clone();
-        let password_for_spec = password.clone();
 
         runtime.spawn(async move {
             let result: PollResult = async {
-                let client =
-                    SshClient::new_with_password(username, host_for_spec.clone(), password, port);
-
-                let mut topo = IsIsBfsTopology::new_from_ssh_client(client)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to create ISIS topology: {}", e))?;
-
-                let (source_id, nodes, if_stats) = topo
-                    .fetch_snapshot()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to fetch snapshot: {}", e))?;
-
-                let source_spec = SourceSpec::new_ssh(
-                    host_for_spec,
-                    port,
-                    username_for_spec,
-                    password_for_spec,
-                    ProtocolKind::Isis,
-                );
-
-                Ok(PollMessage {
-                    source_id,
-                    nodes,
-                    if_stats,
-                    source_spec,
-                })
-            }
-            .await;
-
-            let mut guard = result_slot.lock().await;
-            *guard = Some(result);
-        });
-    }
-
-    fn connect_snmp(
-        &mut self,
-        host: String,
-        port: u16,
-        community: String,
-        clear_other_sources: bool,
-    ) {
-        self.snmp_connect_status = ConnectStatus::Pending;
-
-        if clear_other_sources {
-            self.store = TopologyStore::default();
-            self.autopoller.clear_source_specs();
-        }
-
-        let result_slot = self.snmp_connect_result.clone();
-        let runtime = self.runtime.clone();
-
-        let host_for_lookup = host.clone();
-        let community_for_spec = community.clone();
-
-        runtime.spawn(async move {
-            let result: PollResult = async {
-                let addr = if let Ok(ip) = host_for_lookup.parse::<IpAddr>() {
-                    SocketAddr::new(ip, port)
-                } else {
-                    let mut addrs = tokio::net::lookup_host((host_for_lookup.as_str(), port))
-                        .await
-                        .map_err(|e| anyhow::anyhow!("DNS lookup failed: {}", e))?;
-                    addrs
-                        .next()
-                        .ok_or_else(|| anyhow::anyhow!("DNS lookup returned no addresses"))?
+                let source_id = match &protocol {
+                    ProtocolKind::Ospf => crate::network::router::RouterId::Ipv4(
+                        source_id
+                            .parse::<std::net::Ipv4Addr>()
+                            .map_err(|e| anyhow::anyhow!("Invalid OSPF router ID: {}", e))?,
+                    ),
+                    ProtocolKind::Isis => crate::network::router::RouterId::IsIs(
+                        crate::parsers::isis_parser::core_lsp::SystemId::from_string(&source_id)
+                            .map_err(|e| anyhow::anyhow!("Invalid IS-IS system ID: {}", e))?,
+                    ),
                 };
-
-                let client = SnmpClient::new(addr, &community, snmp2::Version::V2C, None);
-                let mut topo = OspfBfsSnmpTopology::from_snmp_client(client)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to build OSPF topology: {}", e))?;
-
+                let interface_stats = parse_interface_stats(&interface_stats)?;
+                let client = crate::data_acquisition::transport::grpc::client::GnmiClient::new(
+                    uri.clone(),
+                    &username,
+                    &password,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to connect to gNMI: {}", e))?;
+                let mut topo: Box<dyn SnapshotSource> = match protocol.clone() {
+                    ProtocolKind::Ospf => Box::new(
+                        crate::topology::NokiaGnmiOspfTopology::from_gnmi_client(
+                            client,
+                            source_id,
+                            interface_stats,
+                        ),
+                    ),
+                    ProtocolKind::Isis => Box::new(
+                        crate::parsers::isis_parser::topology::NokiaGnmiIsisTopology::from_gnmi_client(
+                            client,
+                            source_id,
+                            interface_stats,
+                        ),
+                    ),
+                };
                 let (source_id, nodes, if_stats) = topo
                     .fetch_snapshot()
                     .await
-                    .map_err(|e| anyhow::anyhow!("Failed to fetch snapshot: {}", e))?;
-
-                let source_spec = SourceSpec::new_snmp(
-                    addr,
-                    community_for_spec,
-                    snmp2::Version::V2C,
-                    None,
-                    ProtocolKind::Ospf,
+                    .map_err(|e| anyhow::anyhow!("Failed to fetch gNMI snapshot: {}", e))?;
+                let source_spec = SourceSpec::new_gnmi(
+                    uri,
+                    username,
+                    password,
+                    source_id.clone(),
+                    if_stats.clone(),
+                    protocol,
                 );
-
                 Ok(PollMessage {
                     source_id,
                     nodes,
@@ -360,6 +295,42 @@ impl ConnectActions for App {
             *guard = Some(result);
         });
     }
+}
+
+fn parse_interface_stats(
+    input: &str,
+) -> anyhow::Result<Vec<crate::network::router::InterfaceStats>> {
+    input
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let fields: Vec<_> = line.split(',').map(str::trim).collect();
+            if fields.len() != 5 {
+                return Err(anyhow::anyhow!(
+                    "Interface statistics must use ip,tx_bytes,tx_packets,rx_bytes,rx_packets"
+                ));
+            }
+            let parse_counter = |value: &str| {
+                if value == "-" {
+                    Ok(None)
+                } else {
+                    value
+                        .parse::<u64>()
+                        .map(Some)
+                        .map_err(|e| anyhow::anyhow!("Invalid interface counter: {}", e))
+                }
+            };
+            Ok(crate::network::router::InterfaceStats {
+                ip_address: fields[0]
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("Invalid interface IP: {}", e))?,
+                tx_bytes: parse_counter(fields[1])?,
+                tx_packets: parse_counter(fields[2])?,
+                rx_bytes: parse_counter(fields[3])?,
+                rx_packets: parse_counter(fields[4])?,
+            })
+        })
+        .collect()
 }
 
 impl GraphActions for App {
@@ -373,7 +344,8 @@ impl GraphActions for App {
     }
 
     fn selected_node(&self) -> Option<&Node> {
-        let node = self.graph
+        let node = self
+            .graph
             .graph
             .selected_nodes()
             .first()
@@ -393,26 +365,28 @@ impl GraphActions for App {
     }
 
     fn node_index_to_uuid(&self, index: petgraph::prelude::NodeIndex) -> Option<Uuid> {
-        self.graph.graph.node(index)
-            .map(|node| node.payload().id)
+        self.graph.graph.node(index).map(|node| node.payload().id)
     }
 
     fn compute_path(&mut self, start: Uuid, end: Uuid) -> Option<(u32, Vec<Uuid>)> {
-        if let (Some(start_idx), Some(end_idx)) = (self.graph.node_id_to_index_map.get(&start), self.graph.node_id_to_index_map.get(&end)) {
+        if let (Some(start_idx), Some(end_idx)) = (
+            self.graph.node_id_to_index_map.get(&start),
+            self.graph.node_id_to_index_map.get(&end),
+        ) {
             petgraph::algo::astar(
                 &self.graph.graph.g(),
                 *start_idx,
                 |node| node == *end_idx,
-                |e|  {
-                    (&e.weight().payload().metric).into()
-                },
-                |_| 0
+                |e| (&e.weight().payload().metric).into(),
+                |_| 0,
             )
             .map(|(cost, path)| {
                 let path = path
                     .into_iter()
                     .map(|node_idx| {
-                        self.graph.graph.node(node_idx)
+                        self.graph
+                            .graph
+                            .node(node_idx)
                             .expect("Node not found, this should never happen")
                             .payload()
                             .id
@@ -420,7 +394,7 @@ impl GraphActions for App {
                     .collect();
                 (cost, path)
             })
-        } else { 
+        } else {
             None
         }
     }
@@ -532,7 +506,7 @@ impl eframe::App for App {
             graph_panel.ui(ctx, ui, self);
             self.graph_panel = graph_panel;
         });
-        
+
         {
             let mut tool_tray = std::mem::take(&mut self.tool_tray);
             tool_tray.ui(ctx, self);
@@ -561,29 +535,15 @@ impl App {
 
         let mut pending = Vec::new();
 
-        if let Ok(mut guard) = self.ssh_connect_result.try_lock() {
+        if let Ok(mut guard) = self.gnmi_connect_result.try_lock() {
             if let Some(res) = guard.take() {
                 match res {
                     Ok(msg) => {
                         pending.push(msg);
-                        self.ssh_connect_status = ConnectStatus::Success;
+                        self.gnmi_connect_status = ConnectStatus::Success;
                     }
                     Err(err) => {
-                        self.ssh_connect_status = ConnectStatus::Failure(err.to_string());
-                    }
-                }
-            }
-        }
-
-        if let Ok(mut guard) = self.snmp_connect_result.try_lock() {
-            if let Some(res) = guard.take() {
-                match res {
-                    Ok(msg) => {
-                        pending.push(msg);
-                        self.snmp_connect_status = ConnectStatus::Success;
-                    }
-                    Err(err) => {
-                        self.snmp_connect_status = ConnectStatus::Failure(err.to_string());
+                        self.gnmi_connect_status = ConnectStatus::Failure(err.to_string());
                     }
                 }
             }
@@ -603,7 +563,7 @@ impl App {
         }
     }
 
-    fn render_side_panel(&mut self, ctx: &Context, frame: &mut eframe::Frame, ui: &mut Ui) {
+    fn render_side_panel(&mut self, ctx: &Context, _frame: &mut eframe::Frame, ui: &mut Ui) {
         CollapsingHeader::new("Connections")
             .default_open(true)
             .show(ui, |ui| {
@@ -611,15 +571,25 @@ impl App {
                 connection_panel.ui(ctx, ui, self);
                 self.connections_panel = connection_panel;
             });
-        { 
+        {
             let mut autopoller = std::mem::take(&mut self.autopoller);
             autopoller.ui(ctx, ui, self);
             self.autopoller = autopoller;
         }
+        let mut collapse_p2p = self.graph.collapse_p2p_networks();
+        if ui
+            .checkbox(&mut collapse_p2p, "Collapse two-router P2P networks")
+            .changed()
+        {
+            self.graph.set_collapse_p2p_networks(collapse_p2p);
+            if let Err(error) = self.reload_graph() {
+                eprintln!("[new_app] Failed to apply graph layout option: {error}");
+            }
+        }
         ThemeSelect::ui(ctx, ui, self);
     }
 
-    fn render_bottom_dock(&mut self, ctx: &Context, frame: &mut eframe::Frame, ui: &mut Ui) {
+    fn render_bottom_dock(&mut self, _ctx: &Context, _frame: &mut eframe::Frame, ui: &mut Ui) {
         let mut bottom_dock = std::mem::take(&mut self.bottom_dock);
         bottom_dock.ui(ui, self);
         self.bottom_dock = bottom_dock;

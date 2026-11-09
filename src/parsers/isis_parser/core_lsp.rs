@@ -77,45 +77,46 @@ impl Lsp {
             owned,
         }
     }
-    
+
     pub fn get_net_address(&self) -> Option<NetAddress> {
         println!("get_net_address called");
-        if let Some(Tlv::AreaAddresses(t)) = self.get_tlvs_by(|t| matches!(t, Tlv::AreaAddresses(_))).first() {
+        if let Some(Tlv::AreaAddresses(t)) = self
+            .get_tlvs_by(|t| matches!(t, Tlv::AreaAddresses(_)))
+            .first()
+        {
             println!("AreaAddresses TLV found");
-            t.addresses.first().map(|area| {
-                NetAddress { area_address: area.clone(), system_id: self.system_id.clone() }
+            t.addresses.first().map(|area| NetAddress {
+                area_address: area.clone(),
+                system_id: self.system_id.clone(),
             })
         } else if let Some(area_addr) = &self.area_addr {
             println!("AreaName found");
             let net_addr_string = format!("{}.{}", area_addr, self.system_id);
             let net = NetAddress::from_str(&net_addr_string).ok();
-            
+
             if net.is_none() {
                 println!("Invalid NetAddress: {}", &net_addr_string);
             }
-            
+
             net
-            
         } else {
             println!("No area address found");
             None
         }
     }
-    
-    pub fn get_tlvs_by<F>(&self, pred: F) -> Vec<&Tlv> 
-    where 
+
+    pub fn get_tlvs_by<F>(&self, pred: F) -> Vec<&Tlv>
+    where
         F: Fn(&Tlv) -> bool,
     {
-        self.tlvs.iter()
-            .filter(|t| pred(t))
-            .collect()
+        self.tlvs.iter().filter(|t| pred(t)).collect()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NetAddress {
     pub area_address: AreaAddress,
-    pub system_id: SystemId
+    pub system_id: SystemId,
 }
 
 impl NetAddress {
@@ -125,36 +126,36 @@ impl NetAddress {
         vec.extend_from_slice(&self.system_id.raw_id);
         vec
     }
-    
+
     pub fn from_str(net_address: &str) -> Result<Self, LspError> {
         let mut parts: Vec<&str> = net_address.split(".").collect();
-        
+
         if parts.is_empty() {
             return Err(LspError::InvalidNetAddress(net_address.to_string()));
         }
-        
+
         // Strip AFI and NSEG, check values
-        
+
         let afi = parts.remove(0);
         if afi != "49" {
             return Err(LspError::InvalidNetAddress(net_address.to_string()));
         }
-        
+
         let nseg = parts.pop();
         if nseg != Some("00") {
             return Err(LspError::InvalidNetAddress(net_address.to_string()));
         }
-        
+
         // Pop the last 3 parts, that's the system ID
         // the rest is the area address
-        
+
         if parts.len() < 3 {
             return Err(LspError::InvalidNetAddress(net_address.to_string()));
         }
-        
+
         let sys_parts = parts.split_off(parts.len() - 3);
         let system_id = SystemId::from_string(&sys_parts.join("."))?;
-        
+
         let mut area_bytes: Vec<u8> = Vec::new();
         for raw_part in parts {
             let part = raw_part.trim();
@@ -175,13 +176,18 @@ impl NetAddress {
             return Err(LspError::InvalidNetAddress(net_address.to_string()));
         }
 
-        let area_address = AreaAddress { raw_address: area_bytes };
-        
-        Ok(NetAddress { area_address, system_id })  
+        let area_address = AreaAddress {
+            raw_address: area_bytes,
+        };
+
+        Ok(NetAddress {
+            area_address,
+            system_id,
+        })
     }
 }
 
-impl Display for NetAddress{
+impl Display for NetAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}.00", self.area_address, self.system_id)
     }
@@ -199,7 +205,7 @@ pub enum Tlv {
     ExtendedReachability(IsExtendedReachabilityTlv),
     /// TLV #128: IP Reachability — IPv4 prefixes directly connected or redistributed by this router.
     IpReachability(IpReachabilityTlv),
-    /// TLV #135: 
+    /// TLV #135:
     ExtendedIpReachability(ExtendedIpReachabilityTlv),
     /// TLV #137: Hostname — the router's human-readable name.
     Hostname(String),
@@ -223,7 +229,7 @@ impl Tlv {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtendedIpReachabilityTlv {
-    pub neighbors: Vec<ExtendedIpReachabilityNeighbor>
+    pub neighbors: Vec<ExtendedIpReachabilityNeighbor>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,7 +237,7 @@ pub struct ExtendedIpReachabilityNeighbor {
     pub metric: u32,
     /// Up is true, down is false
     pub up_down: bool,
-    pub prefix: IpNetwork
+    pub prefix: IpNetwork,
 }
 
 impl ExtendedIpReachabilityNeighbor {
@@ -239,7 +245,7 @@ impl ExtendedIpReachabilityNeighbor {
         Self {
             prefix,
             metric,
-            up_down: is_up
+            up_down: is_up,
         }
     }
 }
@@ -257,7 +263,7 @@ pub struct RouterCapabilityTlv {
 /// TLV #2: IS Reachability
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IsReachabilityTlv {
-    neighbors: Vec<IsNeighbor>
+    neighbors: Vec<IsNeighbor>,
 }
 
 impl IsReachabilityTlv {
@@ -298,7 +304,7 @@ impl AreaAddressesTlv {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IsExtendedReachabilityTlv {
-    pub neighbors: Vec<ExtendedIsNeighbor>
+    pub neighbors: Vec<ExtendedIsNeighbor>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -345,7 +351,7 @@ impl LspId {
     pub fn new(raw_id: [u8; 8]) -> Self {
         LspId { raw_id }
     }
-    
+
     pub fn new_from(system_id: &SystemId, pseudonode_id: u8, fragment_number: u8) -> Self {
         let mut raw_id = [0u8; 8];
         raw_id[0..6].copy_from_slice(&system_id.raw_id);
@@ -353,11 +359,9 @@ impl LspId {
         raw_id[7] = fragment_number;
         Self::new(raw_id)
     }
-    
+
     pub fn is_pseudonode_of(&self, dis_id: &LspId) -> bool {
-        self.is_pseudonode() &&
-        !dis_id.is_pseudonode() &&
-        self.raw_id[0..6] == dis_id.raw_id[0..6]
+        self.is_pseudonode() && !dis_id.is_pseudonode() && self.raw_id[0..6] == dis_id.raw_id[0..6]
     }
 
     /// Returns the raw 8-byte LSP ID.
@@ -369,17 +373,15 @@ impl LspId {
     /// Extracts the System ID (first 6 bytes) from the LSP ID.
     pub fn get_system_id(&self) -> Result<SystemId, LspError> {
         println!("LspId::get_system_id returns {:?}", &self.raw_id[0..6]);
-        SystemId::new(
-            &self.raw_id[0..6]
-        )
+        SystemId::new(&self.raw_id[0..6])
     }
 
-    /// Returns the pseudonode ID (7th byte) from the LSP ID.    
+    /// Returns the pseudonode ID (7th byte) from the LSP ID.
     #[allow(dead_code)]
     pub fn get_pseudonode_id(&self) -> u8 {
         self.raw_id[6]
     }
-    
+
     pub fn is_pseudonode(&self) -> bool {
         self.raw_id[6] != 0
     }
@@ -388,29 +390,32 @@ impl LspId {
         // Format
         // XXXXXXXXXXXX.XX-XX
         let sanitized = id_str.replace(".", "").replace("-", "");
-        let bytes = hex::decode(sanitized).map_err(|_| LspError::InvalidLspId(id_str.to_string()))?;
-        
+        let bytes =
+            hex::decode(sanitized).map_err(|_| LspError::InvalidLspId(id_str.to_string()))?;
+
         if bytes.len() < 8 {
-            return Err(LspError::InvalidLspId(id_str.to_string()))
+            return Err(LspError::InvalidLspId(id_str.to_string()));
         }
-        
-        let raw_id: [u8; 8] = bytes[0..8].try_into().map_err(|_| LspError::InvalidLspId(id_str.to_string()))?;
-        
-        Ok(Self {
-            raw_id
-        })     
+
+        let raw_id: [u8; 8] = bytes[0..8]
+            .try_into()
+            .map_err(|_| LspError::InvalidLspId(id_str.to_string()))?;
+
+        Ok(Self { raw_id })
     }
-    
+
     pub fn from_string(id_str: &str) -> Result<Self, LspError> {
         // LSP ID format
         // XXXX.XXXX.XXXX.XX-XX
         // ^^^^^^^^^^^^^^ ^^ ^^
         // ^^^^^^^^^^^^^^ ^^ fragment ID
         // System ID      0 => Router, else pseudonode
-        
+
         let mut parts: Vec<String> = id_str.split(".").map(|s| s.to_string()).collect();
-        let pseudonode_and_fragment = parts.pop().ok_or(LspError::InvalidLspId(id_str.to_string()))?;
-        
+        let pseudonode_and_fragment = parts
+            .pop()
+            .ok_or(LspError::InvalidLspId(id_str.to_string()))?;
+
         let mut id_bytes: Vec<u8> = Vec::with_capacity(8);
         for part in &parts {
             // Skip empty parts (defensive)
@@ -418,40 +423,45 @@ impl LspId {
             if part.is_empty() {
                 continue;
             }
-            
+
             // Ensure even length hex string by padding a leading zero if needed
             let part = if part.len() % 2 != 0 {
                 format!("0{}", part)
             } else {
                 part.to_string()
             };
-            
-            let mut bytes = hex::decode(&part)
-                .map_err(|_| LspError::InvalidLspId(id_str.to_string()))?;
+
+            let mut bytes =
+                hex::decode(&part).map_err(|_| LspError::InvalidLspId(id_str.to_string()))?;
             id_bytes.append(&mut bytes);
         }
-        
+
         let mut sanitized_p_and_f: Vec<u8> = hex::decode(pseudonode_and_fragment.replace("-", ""))
             .map_err(|_| LspError::InvalidLspId(id_str.to_string()))?;
         id_bytes.append(&mut sanitized_p_and_f);
-        
+
         if id_bytes.len() < 8 {
-            return Err(LspError::InvalidLspId(id_str.to_string()))
+            return Err(LspError::InvalidLspId(id_str.to_string()));
         }
-        
-        let raw_id: [u8; 8] = id_bytes[0..8].try_into().map_err(|_| LspError::InvalidLspId(id_str.to_string()))?;
-        
-        Ok(Self {
-            raw_id
-        })      
+
+        let raw_id: [u8; 8] = id_bytes[0..8]
+            .try_into()
+            .map_err(|_| LspError::InvalidLspId(id_str.to_string()))?;
+
+        Ok(Self { raw_id })
     }
 }
 
 impl Display for LspId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Format: XXXX.XXXX.XXXX.XX-XX
-        let bytes_str: Vec<String> = self.raw_id.iter().map(|byte| format!("{:02X}", byte)).collect();
-        let system_id_parts: Vec<String> = bytes_str[..6].chunks(2).map(|part| part.join("")).collect();
+        let bytes_str: Vec<String> = self
+            .raw_id
+            .iter()
+            .map(|byte| format!("{:02X}", byte))
+            .collect();
+        let system_id_parts: Vec<String> =
+            bytes_str[..6].chunks(2).map(|part| part.join("")).collect();
         let system_id = system_id_parts.join(".");
         let rest = bytes_str[6..].join("-");
         write!(f, "{}.{}", system_id, rest)
@@ -466,10 +476,10 @@ pub struct SystemId {
 
 impl Display for SystemId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let parts: Vec<String> = self.raw_id.chunks(2)
-            .map(|part| {
-                hex::encode(part)
-            })
+        let parts: Vec<String> = self
+            .raw_id
+            .chunks(2)
+            .map(|part| hex::encode(part))
             .collect();
         write!(f, "{}", parts.join("."))
     }
@@ -486,11 +496,11 @@ impl SystemId {
             Ok(SystemId { raw_id })
         }
     }
-    
+
     pub fn to_vec(&self) -> Vec<u8> {
         self.raw_id.to_vec()
     }
-    
+
     pub fn from_string(id_str: &str) -> Result<Self, LspError> {
         let mut id_bytes: Vec<u8> = Vec::new();
 
@@ -509,8 +519,8 @@ impl SystemId {
             };
 
             // Decode the hex chunk and append bytes to the result vector
-            let mut bytes = hex::decode(&part)
-                .map_err(|_| LspError::InvalidSystemId(id_str.to_string()))?;
+            let mut bytes =
+                hex::decode(&part).map_err(|_| LspError::InvalidSystemId(id_str.to_string()))?;
             id_bytes.append(&mut bytes);
         }
 
@@ -519,13 +529,12 @@ impl SystemId {
         }
 
         Ok(SystemId {
-            raw_id: id_bytes[..6].try_into()
-                .map_err(|_| LspError::InvalidSystemId(id_str.to_string()))?
+            raw_id: id_bytes[..6]
+                .try_into()
+                .map_err(|_| LspError::InvalidSystemId(id_str.to_string()))?,
         })
     }
 }
-
-
 
 /// Represents an IS-IS area address (variable-length, protocol-specific encoding).
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -573,6 +582,7 @@ impl Display for IsLevel {
     }
 }
 
+#[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
     use super::*;

@@ -1,7 +1,6 @@
 //! Module for packet inspector modules
 
-mod parse;
+pub mod bytes;
+pub mod semantic;
 pub mod state;
 mod ui;
-pub mod semantic;
-pub mod bytes;

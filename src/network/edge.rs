@@ -18,7 +18,7 @@ pub enum EdgeMetric {
     IsIs(u32),
     Manual(u32),
     Other,
-    None
+    None,
 }
 
 impl Into<u32> for &EdgeMetric {
@@ -50,7 +50,7 @@ pub enum EdgeKind {
 pub struct UndirectedEdgeKey {
     pub a: Uuid,
     pub b: Uuid,
-    pub kind: EdgeKind
+    pub kind: EdgeKind,
 }
 
 impl UndirectedEdgeKey {
@@ -58,7 +58,7 @@ impl UndirectedEdgeKey {
         let (a, b) = if a < b { (a, b) } else { (b, a) };
         UndirectedEdgeKey { a, b, kind }
     }
-    
+
     pub fn endpoints(&self) -> (Uuid, Uuid) {
         (self.a, self.b)
     }
@@ -68,14 +68,18 @@ impl UndirectedEdgeKey {
 pub struct ManualEdgeSpec {
     pub key: UndirectedEdgeKey,
     pub metric: EdgeMetric,
-    pub protocol_tag: String
+    pub protocol_tag: String,
 }
 
 impl ManualEdgeSpec {
     pub fn new(key: UndirectedEdgeKey, metric: u32) -> Self {
-        ManualEdgeSpec { key, metric: EdgeMetric::Manual(metric), protocol_tag: "MANUAL".to_string() }
+        ManualEdgeSpec {
+            key,
+            metric: EdgeMetric::Manual(metric),
+            protocol_tag: "MANUAL".to_string(),
+        }
     }
-    
+
     pub fn set_metric(&mut self, metric: u32) {
         self.metric = EdgeMetric::Manual(metric);
     }

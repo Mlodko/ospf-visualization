@@ -343,141 +343,156 @@ fn isis_protocol_data_section(ui: &mut Ui, data: &IsIsData) {
         }
         if !data.tlvs.is_empty() {
             collapsible_section(ui, "TLVs", false, |ui| {
-                egui::ScrollArea::vertical().min_scrolled_height(100.0).show(ui, |ui| {
-                    for tlv in &data.tlvs {
-                        match tlv {
-                            Tlv::AreaAddresses(tlv) => {
-                                collapsible_section(ui, "Area Addresses", false, |ui| {
-                                    let addresses =
-                                        tlv.addresses.iter().map(|address| address.to_string());
-                                    bullet_list(ui, addresses);
-                                });
-                            }
-                            Tlv::Hostname(hostname) => {
-                                collapsible_section(ui, "Hostname", false, |ui| {
-                                    ui.add(label_no_wrap(format!("Hostname: {}", hostname)));
-                                });
-                            }
-                            Tlv::ExtendedIpReachability(tlv) => {
-                                collapsible_section(ui, "Extended IP Reachability", false, |ui| {
-                                    egui_extras::TableBuilder::new(ui)
-                                        .striped(true)
-                                        .column(egui_extras::Column::auto())
-                                        .column(egui_extras::Column::auto())
-                                        .column(egui_extras::Column::auto())
-                                        .header(20.0, |mut header| {
-                                            header.col(|ui| {
-                                                ui.label("IP Prefix");
-                                            });
-                                            header.col(|ui| {
-                                                ui.label("Metric");
-                                            });
-                                            header.col(|ui| {
-                                                ui.label("Up/Down");
-                                            });
-                                        })
-                                        .body(|mut body| {
-                                            for n in &tlv.neighbors {
-                                                body.row(18.0, |mut row| {
-                                                    row.col(|ui| {
-                                                        ui.label(format!("{}", n.prefix));
+                egui::ScrollArea::vertical()
+                    .min_scrolled_height(100.0)
+                    .show(ui, |ui| {
+                        for tlv in &data.tlvs {
+                            match tlv {
+                                Tlv::AreaAddresses(tlv) => {
+                                    collapsible_section(ui, "Area Addresses", false, |ui| {
+                                        let addresses =
+                                            tlv.addresses.iter().map(|address| address.to_string());
+                                        bullet_list(ui, addresses);
+                                    });
+                                }
+                                Tlv::Hostname(hostname) => {
+                                    collapsible_section(ui, "Hostname", false, |ui| {
+                                        ui.add(label_no_wrap(format!("Hostname: {}", hostname)));
+                                    });
+                                }
+                                Tlv::ExtendedIpReachability(tlv) => {
+                                    collapsible_section(
+                                        ui,
+                                        "Extended IP Reachability",
+                                        false,
+                                        |ui| {
+                                            egui_extras::TableBuilder::new(ui)
+                                                .striped(true)
+                                                .column(egui_extras::Column::auto())
+                                                .column(egui_extras::Column::auto())
+                                                .column(egui_extras::Column::auto())
+                                                .header(20.0, |mut header| {
+                                                    header.col(|ui| {
+                                                        ui.label("IP Prefix");
                                                     });
-                                                    row.col(|ui| {
-                                                        ui.label(format!("{}", n.metric));
+                                                    header.col(|ui| {
+                                                        ui.label("Metric");
                                                     });
-                                                    row.col(|ui| {
-                                                        ui.label(if n.up_down {
-                                                            "Up"
-                                                        } else {
-                                                            "Down"
-                                                        });
+                                                    header.col(|ui| {
+                                                        ui.label("Up/Down");
                                                     });
-                                                });
-                                            }
-                                        });
-                                });
-                            }
-                            Tlv::ExtendedReachability(tlv) => {
-                                collapsible_section(ui, "Extended IS Reachability", false, |ui| {
-                                    egui_extras::TableBuilder::new(ui)
-                                        .striped(true)
-                                        .column(egui_extras::Column::auto())
-                                        .column(egui_extras::Column::auto())
-                                        .column(egui_extras::Column::auto())
-                                        .header(20.0, |mut header| {
-                                            header.col(|ui| {
-                                                ui.label("System ID");
-                                            });
-                                            header.col(|ui| {
-                                                ui.label("Pseudonode ID");
-                                            });
-                                            header.col(|ui| {
-                                                ui.label("Metric");
-                                            });
-                                        })
-                                        .body(|mut body| {
-                                            for n in &tlv.neighbors {
-                                                body.row(18.0, |mut row| {
-                                                    row.col(|ui| {
-                                                        ui.label(n.neighbor_id.to_string());
-                                                    });
-                                                    row.col(|ui| {
-                                                        ui.label(if n.pseudonode_id == 0 {
-                                                            "-".to_string()
-                                                        } else {
-                                                            hex::encode(&[n.pseudonode_id])
-                                                        });
-                                                    });
-                                                    row.col(|ui| {
-                                                        ui.label(format!("{}", n.metric));
-                                                    });
-                                                });
-                                            }
-                                        });
-                                });
-                            }
-                            Tlv::RouterCapability(tlv) => {
-                                collapsible_section(ui, "Router Capability", false, |ui| {
-                                    if let Some(addr) = tlv.te_router_id {
-                                        ui.add(label_no_wrap(format!("TE Router ID: {}", addr)));
-                                    }
-
-                                    if !tlv.flags.is_empty() {
-                                        egui_extras::TableBuilder::new(ui)
-                                            .striped(true)
-                                            .column(egui_extras::Column::auto())
-                                            .column(egui_extras::Column::auto())
-                                            .header(20.0, |mut header| {
-                                                header.col(|ui| {
-                                                    ui.label("Name");
-                                                });
-                                                header.col(|ui| {
-                                                    ui.label("Value");
-                                                });
-                                            })
-                                            .body(|mut body| {
-                                                for (name, value) in tlv.flags.iter() {
-                                                    body.row(18.0, |mut row| {
-                                                        row.col(|ui| {
-                                                            ui.label(name);
-                                                        });
-                                                        row.col(|ui| {
-                                                            ui.label(if *value {
-                                                                "true"
-                                                            } else {
-                                                                "false"
+                                                })
+                                                .body(|mut body| {
+                                                    for n in &tlv.neighbors {
+                                                        body.row(18.0, |mut row| {
+                                                            row.col(|ui| {
+                                                                ui.label(format!("{}", n.prefix));
+                                                            });
+                                                            row.col(|ui| {
+                                                                ui.label(format!("{}", n.metric));
+                                                            });
+                                                            row.col(|ui| {
+                                                                ui.label(if n.up_down {
+                                                                    "Up"
+                                                                } else {
+                                                                    "Down"
+                                                                });
                                                             });
                                                         });
+                                                    }
+                                                });
+                                        },
+                                    );
+                                }
+                                Tlv::ExtendedReachability(tlv) => {
+                                    collapsible_section(
+                                        ui,
+                                        "Extended IS Reachability",
+                                        false,
+                                        |ui| {
+                                            egui_extras::TableBuilder::new(ui)
+                                                .striped(true)
+                                                .column(egui_extras::Column::auto())
+                                                .column(egui_extras::Column::auto())
+                                                .column(egui_extras::Column::auto())
+                                                .header(20.0, |mut header| {
+                                                    header.col(|ui| {
+                                                        ui.label("System ID");
                                                     });
-                                                }
-                                            });
-                                    }
-                                });
+                                                    header.col(|ui| {
+                                                        ui.label("Pseudonode ID");
+                                                    });
+                                                    header.col(|ui| {
+                                                        ui.label("Metric");
+                                                    });
+                                                })
+                                                .body(|mut body| {
+                                                    for n in &tlv.neighbors {
+                                                        body.row(18.0, |mut row| {
+                                                            row.col(|ui| {
+                                                                ui.label(n.neighbor_id.to_string());
+                                                            });
+                                                            row.col(|ui| {
+                                                                ui.label(if n.pseudonode_id == 0 {
+                                                                    "-".to_string()
+                                                                } else {
+                                                                    hex::encode(&[n.pseudonode_id])
+                                                                });
+                                                            });
+                                                            row.col(|ui| {
+                                                                ui.label(format!("{}", n.metric));
+                                                            });
+                                                        });
+                                                    }
+                                                });
+                                        },
+                                    );
+                                }
+                                Tlv::RouterCapability(tlv) => {
+                                    collapsible_section(ui, "Router Capability", false, |ui| {
+                                        if let Some(addr) = tlv.te_router_id {
+                                            ui.add(label_no_wrap(format!(
+                                                "TE Router ID: {}",
+                                                addr
+                                            )));
+                                        }
+
+                                        if !tlv.flags.is_empty() {
+                                            egui_extras::TableBuilder::new(ui)
+                                                .striped(true)
+                                                .column(egui_extras::Column::auto())
+                                                .column(egui_extras::Column::auto())
+                                                .header(20.0, |mut header| {
+                                                    header.col(|ui| {
+                                                        ui.label("Name");
+                                                    });
+                                                    header.col(|ui| {
+                                                        ui.label("Value");
+                                                    });
+                                                })
+                                                .body(|mut body| {
+                                                    for (name, value) in tlv.flags.iter() {
+                                                        body.row(18.0, |mut row| {
+                                                            row.col(|ui| {
+                                                                ui.label(name);
+                                                            });
+                                                            row.col(|ui| {
+                                                                ui.label(if *value {
+                                                                    "true"
+                                                                } else {
+                                                                    "false"
+                                                                });
+                                                            });
+                                                        });
+                                                    }
+                                                });
+                                        }
+                                    });
+                                }
+                                _ => (),
                             }
-                            _ => (),
                         }
-                    }
-                });
+                    });
             });
         }
     });
@@ -485,7 +500,11 @@ fn isis_protocol_data_section(ui: &mut Ui, data: &IsIsData) {
 
 fn ospf_protocol_data_section(ui: &mut Ui, data: &OspfData) {
     collapsible_section(ui, "OSPF", false, |ui| {
-        ui.add(label_no_wrap(format!("Area ID: {}", data.area_id)));
+        ui.add(label_no_wrap(format!(
+            "Area ID: {}",
+            data.area_id
+                .map_or_else(|| "unknown".to_string(), |area| area.to_string())
+        )));
         ui.add(label_no_wrap(format!(
             "Advertising Router ID: {}",
             data.advertising_router
@@ -494,10 +513,7 @@ fn ospf_protocol_data_section(ui: &mut Ui, data: &OspfData) {
             "Link State ID: {}",
             data.link_state_id
         )));
-        ui.add(label_no_wrap(format!(
-            "LS age: {}",
-            data.ls_age
-        )));
+        ui.add(label_no_wrap(format!("LS age: {}", data.ls_age)));
         ui.add(label_no_wrap(format!(
             "LS sequence number: {}",
             data.ls_seq_no

@@ -1,6 +1,6 @@
 use nom::IResult;
 
-use crate::{gui::modules::dock::packet::parse::lsa::{header::LsaHeader, payload::LsaPayload}, network::node::OspfAdvertisement};
+use crate::adapters::packets::ospf::{header::LsaHeader, payload::LsaPayload};
 
 #[derive(Debug, Clone)]
 pub struct Lsa {
@@ -11,9 +11,9 @@ pub struct Lsa {
 
 impl PartialEq for Lsa {
     fn eq(&self, other: &Self) -> bool {
-        self.header.ls_type     == other.header.ls_type &&
-        self.header.ls_id       == other.header.ls_id &&
-        self.header.adv_router  == other.header.adv_router
+        self.header.ls_type == other.header.ls_type
+            && self.header.ls_id == other.header.ls_id
+            && self.header.adv_router == other.header.adv_router
     }
 }
 
@@ -32,7 +32,7 @@ impl Lsa {
         // The header's `length` field is total LSA length (header + payload).
         // Validate we have at least that many bytes in `input`.
         let total_len = header.length.value as usize;
-        if input.len() < total_len {
+        if total_len < consumed || input.len() < total_len {
             return Err(nom::Err::Error(nom::error::Error::new(
                 input,
                 nom::error::ErrorKind::LengthValue,
@@ -40,6 +40,7 @@ impl Lsa {
         }
 
         // Slice out the payload bytes according to total length minus header consumed.
+        dbg!(consumed, total_len, rest_after_header.len());
         let payload_len = total_len - consumed;
         let payload_input = &rest_after_header[..payload_len];
 
@@ -51,8 +52,15 @@ impl Lsa {
         // Return any remaining bytes from the original input beyond the LSA.
         let remaining_after_lsa = &rest_after_header[payload_len..];
         let raw = input.to_vec();
-        
-        Ok((remaining_after_lsa, Lsa { header, payload, raw }))
+
+        Ok((
+            remaining_after_lsa,
+            Lsa {
+                header,
+                payload,
+                raw,
+            },
+        ))
     }
 }
 #[cfg(test)]
@@ -95,5 +103,17 @@ mod tests {
             count += 1;
         }
         assert!(count > 0, "No LSAs parsed");
+    }
+
+    #[test]
+    fn test_parse_lsa() {
+        let lsa: [u8; 24] = [
+            100, 1, 0, 2, 100, 1, 0, 1, 128, 0, 0, 5, 39, 83, 0, 28, 0, 0, 0, 24, 0, 0, 0, 16,
+        ];
+        let (rest, parsed_lsa) = Lsa::parse(&lsa).expect("Failed to parse LSA");
+        assert!(
+            rest.is_empty(),
+            "Expected no remaining bytes after parsing LSA"
+        );
     }
 }

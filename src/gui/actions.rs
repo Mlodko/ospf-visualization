@@ -1,10 +1,13 @@
-use std::{collections::HashMap, time::SystemTime};
+use std::time::SystemTime;
 
-use catppuccin_egui::Theme;
 use petgraph::graph::NodeIndex;
 use uuid::Uuid;
 
-use crate::{gui::{modules::graph::GraphWidget, new_app::ThemeId, tools::tray::ToolId}, network::{edge::Edge, network_graph::NetworkGraph, node::Node, router::InterfaceStats}, topology::store::{SourceHealth, SourceId}};
+use crate::{
+    gui::{new_app::ThemeId, tools::tray::ToolId},
+    network::{edge::Edge, network_graph::NetworkGraph, node::Node, router::InterfaceStats},
+    topology::store::{SourceHealth, SourceId},
+};
 
 /// Set of actions that can be called from modules/panels and executed by the app
 pub trait AppActions: ConnectActions + GraphActions + SourceActions {
@@ -43,12 +46,18 @@ pub struct SourceSummary {
 }
 
 pub trait ConnectActions {
-    fn ssh_connect_status(&self) -> &ConnectStatus;
-    fn clear_ssh_connect_status(&mut self);
-    fn snmp_connect_status(&self) -> &ConnectStatus;
-    fn clear_snmp_connect_status(&mut self);
-    fn connect_ssh(&mut self, host: String, port: u16, username: String, password: String, clear_other_sources: bool);
-    fn connect_snmp(&mut self, host: String, port: u16, community: String, clear_other_sources: bool);
+    fn gnmi_connect_status(&self) -> &ConnectStatus;
+    fn clear_gnmi_connect_status(&mut self);
+    fn connect_gnmi(
+        &mut self,
+        uri: String,
+        username: String,
+        password: String,
+        source_id: String,
+        interface_stats: String,
+        protocol: crate::gui::autopoll::ProtocolKind,
+        clear_other_sources: bool,
+    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,26 +65,26 @@ pub enum ConnectStatus {
     Idle,
     Pending,
     Success,
-    Failure(String)
+    Failure(String),
 }
 
 impl ConnectStatus {
     pub fn is_idle(&self) -> bool {
         matches!(self, ConnectStatus::Idle)
     }
-    
+
     pub fn is_pending(&self) -> bool {
         matches!(self, ConnectStatus::Pending)
     }
-    
+
     pub fn is_success(&self) -> bool {
         matches!(self, ConnectStatus::Success)
     }
-    
+
     pub fn is_failure(&self) -> bool {
         matches!(self, ConnectStatus::Failure(_))
     }
-    
+
     pub fn failure_reason(&self) -> Option<&str> {
         if let ConnectStatus::Failure(reason) = self {
             Some(reason)

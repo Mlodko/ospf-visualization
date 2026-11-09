@@ -1,7 +1,7 @@
 #[derive(Clone, Copy)]
 pub struct Span {
     pub start: usize,
-    pub end: usize
+    pub end: usize,
 }
 
 impl core::fmt::Debug for Span {
@@ -14,18 +14,18 @@ impl Span {
     pub fn new(start: usize, end: usize) -> Self {
         Span { start, end }
     }
-    
+
     pub fn compose(&self, other: &Span) -> Span {
         Span {
             start: self.start + other.start,
-            end: self.end + other.start
+            end: self.end + other.start,
         }
     }
-    
+
     pub fn offset(&self, offset: usize) -> Span {
         Span {
             start: self.start + offset,
-            end: self.end + offset
+            end: self.end + offset,
         }
     }
 }
@@ -33,7 +33,7 @@ impl Span {
 #[derive(Debug, Clone)]
 pub struct Field<T> {
     pub span: Span,
-    pub value: T
+    pub value: T,
 }
 
 impl<T> Field<T> {
@@ -43,7 +43,9 @@ impl<T> Field<T> {
 }
 
 impl<T> PartialEq for Field<T>
-where T: PartialEq {
+where
+    T: PartialEq,
+{
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
     }

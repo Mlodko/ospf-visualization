@@ -6,10 +6,11 @@ use async_trait::async_trait;
 use thiserror::Error;
 
 use crate::{
+    adapters::RoutingMessage,
     network::{node::Node, router::InterfaceStats},
     topology::{
         TopologySource,
-        source::{SnapshotSource, TopologyError},
+        source::{RoutingMessageSource, SnapshotSource, TopologyError},
         store::SourceId,
     },
 };
@@ -80,6 +81,14 @@ pub trait RoutingProtocol: Send + Sync {
     fn post_process(&self, nodes: &mut Vec<Node>) -> Result<(), ProtocolTopologyError>;
 }
 
+/// Protocol-specific conversion and post-processing for canonical messages.
+pub trait RoutingMessageProtocol: Send + Sync {
+    fn message_to_nodes(&self, message: RoutingMessage)
+    -> Result<Vec<Node>, ProtocolTopologyError>;
+
+    fn post_process(&self, nodes: &mut Vec<Node>) -> Result<(), ProtocolTopologyError>;
+}
+
 pub struct Topology<P, S>
 where
     P: RoutingProtocol,
@@ -107,7 +116,7 @@ where
     pub fn source(&self) -> &S {
         &self.source
     }
-    
+
     pub fn source_mut(&mut self) -> &mut S {
         &mut self.source
     }
@@ -141,6 +150,86 @@ pub enum FederationError {
     UnsupportedPayload,
     #[error("Facets have differing RouterId / prefix identity")]
     MixedIdentity,
+}
+
+/// Topology pipeline backed by canonical routing messages.
+pub struct RoutingMessageTopology<P, S>
+where
+    P: RoutingMessageProtocol,
+    S: RoutingMessageSource,
+{
+    protocol: P,
+    source: S,
+}
+
+impl<P, S> RoutingMessageTopology<P, S>
+where
+    P: RoutingMessageProtocol,
+    S: RoutingMessageSource,
+{
+    pub fn new(protocol: P, source: S) -> Self {
+        Self { protocol, source }
+    }
+
+    pub fn protocol(&self) -> &P {
+        &self.protocol
+    }
+
+    pub fn source(&self) -> &S {
+        &self.source
+    }
+
+    pub fn source_mut(&mut self) -> &mut S {
+        &mut self.source
+    }
+}
+
+#[async_trait]
+impl<P, S> TopologySource for RoutingMessageTopology<P, S>
+where
+    P: RoutingMessageProtocol,
+    S: RoutingMessageSource,
+{
+    async fn fetch_nodes(&mut self) -> Result<Vec<Node>, TopologyError> {
+        let messages = self
+            .source
+            .fetch_messages()
+            .await
+            .map_err(TopologyError::from)?;
+        let mut nodes = Vec::new();
+
+        for message in messages {
+            let converted = self
+                .protocol
+                .message_to_nodes(message)
+                .map_err(TopologyError::from)?;
+            nodes.extend(converted);
+        }
+
+        self.protocol
+            .post_process(&mut nodes)
+            .map_err(TopologyError::from)?;
+
+        Ok(nodes)
+    }
+}
+
+#[async_trait]
+impl<P, S> SnapshotSource for RoutingMessageTopology<P, S>
+where
+    P: RoutingMessageProtocol,
+    S: RoutingMessageSource,
+{
+    async fn fetch_source_id(&mut self) -> Result<SourceId, TopologyError> {
+        self.source
+            .fetch_source_id()
+            .await
+            .map_err(TopologyError::from)
+    }
+
+    async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, TopologyError> {
+        self.source.fetch_stats().await.map_err(TopologyError::from)
+    }
 }
 
 #[async_trait]
@@ -243,11 +332,8 @@ where
             .await
             .map_err(TopologyError::from)
     }
-    
+
     async fn fetch_stats(&mut self) -> Result<Vec<InterfaceStats>, TopologyError> {
-        self.source
-            .fetch_stats()
-            .await
-            .map_err(TopologyError::from)
+        self.source.fetch_stats().await.map_err(TopologyError::from)
     }
 }

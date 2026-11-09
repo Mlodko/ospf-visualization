@@ -3,13 +3,12 @@ use std::collections::HashMap;
 
 use crate::gui::graph_overlay;
 
-use egui::{Color32, Context, Pos2, Shape, Stroke};
+use egui::{Color32, Context, Pos2, Shape};
 use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps};
-use petgraph::csr::EdgeIndex;
 use petgraph::{EdgeType, stable_graph::IndexType};
 use uuid::Uuid;
 
-use crate::gui::app;
+use crate::gui::new_app;
 use crate::gui::node_shape::NetworkGraphNodeShape;
 use crate::network::edge::{Edge as NetEdge, EdgeKind, EdgeMetric};
 
@@ -181,7 +180,7 @@ impl<Ty: EdgeType, Ix: IndexType>
                 // 300ms fade, using your ease_in_out_cubic
                 let duration = std::time::Duration::from_millis(300);
                 let p = anim.eased_progress(duration, ease_in_out_cubic);
-                let theme = app::get_theme();
+                let theme = new_app::get_theme().theme();
                 match anim.phase {
                     crate::gui::edge_anim::EdgeAnimPhase::Creating => {
                         alpha_factor = p;

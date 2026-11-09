@@ -4,21 +4,21 @@ use ipnetwork::IpNetwork;
 use uuid::Uuid;
 
 use crate::{
+    adapters::RoutingMessage,
     network::{
         node::{IsIsData, Network, Node, NodeInfo, ProtocolData},
         router::{Router, RouterId},
     },
     parsers::isis_parser::{
-        core_lsp::{ExtendedIpReachabilityTlv, Lsp, LspError, LspId, NetAddress, SystemId, Tlv},
-        frr_json_lsp::JsonLspdb,
+        core_lsp::{ExtendedIpReachabilityTlv, Lsp, LspId, SystemId, Tlv},
         hostname::HostnameMap,
     },
-    topology::protocol::{ProtocolParseError, ProtocolTopologyError, RoutingProtocol},
+    topology::protocol::{ProtocolTopologyError, RoutingMessageProtocol},
 };
 
 /*
-Due to how bad FRR's LSPDB JSON output is, we need to get the VRF data to get the actual
-System ID for all LSPs instead of hostnames.
+This converter retains the legacy-compatible LSP representation used by the
+canonical topology bridge while resolving System IDs from the parsed LSP data.
 */
 pub struct JsonIsisProtocol {
     hostname_map: HostnameMap,
@@ -38,7 +38,7 @@ impl JsonIsisProtocol {
             lsp_id: lsp.lsp_id,
             tlvs: lsp.tlvs,
             net_address: net_address,
-            owned: lsp.owned
+            owned: lsp.owned,
         });
 
         Ok(Router {
@@ -73,58 +73,8 @@ impl JsonIsisProtocol {
     }
 }
 
-impl RoutingProtocol for JsonIsisProtocol {
-    type RawRecord = JsonLspdb;
-
-    type ParsedItem = Lsp;
-
-    fn parse(
-        &self,
-        raw: Self::RawRecord,
-    ) -> Result<Vec<Self::ParsedItem>, crate::topology::protocol::ProtocolParseError> {
-        let mut lsps = Vec::new();
-        for area in raw.areas {
-            for level in area.levels {
-                let level_no = level.id;
-                for lsp in level.lsps {
-                    let parsed = lsp
-                        .try_into_lsp(level_no, &self.hostname_map)
-                        .map_err(|e| e.into())?;
-                    lsps.push(parsed);
-                }
-            }
-        }
-        Ok(lsps)
-    }
-
-    fn item_to_node(
-        &self,
-        item: Self::ParsedItem,
-    ) -> Result<Option<crate::network::node::Node>, crate::topology::protocol::ProtocolTopologyError>
-    {
-        // Explicitly lean, draw edges in post_process (with context from other nodes)
-        let label = if let Some(Tlv::Hostname(hostname)) =
-            item.get_tlvs_by(|t| matches!(t, Tlv::Hostname(_))).first()
-        {
-            Some(hostname.clone())
-        } else {
-            None
-        };
-
-        println!("Processing LSP of ID: {}", &item.lsp_id);
-
-        let node_info = if item.lsp_id.is_pseudonode() {
-            NodeInfo::Network(Self::lsp_to_network(&self, item)?)
-        } else {
-            NodeInfo::Router(Self::lsp_to_router(&self, item)?)
-        };
-
-        println!("Processed successfully");
-
-        Ok(Some(Node::new(node_info, label)))
-    }
-
-    fn post_process(
+impl JsonIsisProtocol {
+    fn post_process_nodes(
         &self,
         nodes: &mut Vec<crate::network::node::Node>,
     ) -> Result<(), crate::topology::protocol::ProtocolTopologyError> {
@@ -231,6 +181,30 @@ impl RoutingProtocol for JsonIsisProtocol {
                     }
                 }
                 Err(e) => {
+                    // Keep unresolved pseudonetworks distinct. The placeholder prefix
+                    // otherwise gives every network the same UUID and causes the
+                    // topology store to discard all but the last one.
+                    let fallback_id = if let NodeInfo::Network(net) = &nodes[net_idx].info {
+                        net.protocol_data.as_ref().and_then(|data| {
+                            if let ProtocolData::IsIs(data) = data {
+                                Some(Uuid::new_v5(
+                                    &Uuid::NAMESPACE_OID,
+                                    format!(
+                                        "isis-pseudonode:{}",
+                                        hex::encode(data.lsp_id.get_raw_id())
+                                    )
+                                    .as_bytes(),
+                                ))
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    };
+                    if let Some(id) = fallback_id {
+                        nodes[net_idx].id = id;
+                    }
                     eprintln!(
                         "[JsonIsisProtocol::post_process] failed to resolve prefix for network idx={} due to {:?}",
                         net_idx, e
@@ -285,11 +259,40 @@ impl RoutingProtocol for JsonIsisProtocol {
     }
 }
 
-impl Into<ProtocolParseError> for LspError {
-    fn into(self) -> ProtocolParseError {
-        match self {
-            _ => ProtocolParseError::Malformed(self.to_string()),
-        }
+impl RoutingMessageProtocol for JsonIsisProtocol {
+    fn message_to_nodes(
+        &self,
+        message: RoutingMessage,
+    ) -> Result<Vec<Node>, ProtocolTopologyError> {
+        let RoutingMessage::IsIs(lsp) = message else {
+            return Err(ProtocolTopologyError::Conversion(
+                "IS-IS topology received a non-IS-IS routing message".to_string(),
+            ));
+        };
+
+        let legacy_lsp: Lsp = serde_json::from_value(
+            serde_json::to_value(lsp)
+                .map_err(|error| ProtocolTopologyError::Conversion(error.to_string()))?,
+        )
+        .map_err(|error| ProtocolTopologyError::Conversion(error.to_string()))?;
+        let label = legacy_lsp
+            .get_tlvs_by(|tlv| matches!(tlv, Tlv::Hostname(_)))
+            .first()
+            .and_then(|tlv| match tlv {
+                Tlv::Hostname(hostname) => Some(hostname.clone()),
+                _ => None,
+            });
+        let node_info = if legacy_lsp.lsp_id.is_pseudonode() {
+            NodeInfo::Network(self.lsp_to_network(legacy_lsp)?)
+        } else {
+            NodeInfo::Router(self.lsp_to_router(legacy_lsp)?)
+        };
+
+        Ok(vec![Node::new(node_info, label)])
+    }
+
+    fn post_process(&self, nodes: &mut Vec<Node>) -> Result<(), ProtocolTopologyError> {
+        self.post_process_nodes(nodes)
     }
 }
 
@@ -391,10 +394,10 @@ fn resolve_network_prefix(
             ext_reach.neighbors.len()
         );
 
-        let neighbor_lsp_ids: Vec<LspId> = ext_reach
+        let neighbor_system_ids: HashSet<SystemId> = ext_reach
             .neighbors
             .iter()
-            .map(|n| LspId::new_from(&n.neighbor_id, n.pseudonode_id, 0))
+            .map(|n| n.neighbor_id.clone())
             .collect();
 
         let neighbor_isis_data: Vec<&IsIsData> = router_nodes
@@ -411,7 +414,14 @@ fn resolve_network_prefix(
             })
             // Enforce level match to avoid mixing L1/L2 data
             .filter(|data| data.is_level == isis_data.is_level)
-            .filter(|data| neighbor_lsp_ids.contains(&data.lsp_id))
+            .filter(|data| {
+                !data.lsp_id.is_pseudonode()
+                    && data
+                        .lsp_id
+                        .get_system_id()
+                        .ok()
+                        .is_some_and(|id| neighbor_system_ids.contains(&id))
+            })
             .collect();
 
         println!(
@@ -440,13 +450,26 @@ fn resolve_network_prefix(
                     }
                     None
                 })
-                .filter(|data| neighbor_lsp_ids.contains(&data.lsp_id))
+                .filter(|data| {
+                    !data.lsp_id.is_pseudonode()
+                        && data
+                            .lsp_id
+                            .get_system_id()
+                            .ok()
+                            .is_some_and(|id| neighbor_system_ids.contains(&id))
+                })
                 .collect();
 
             // If DIS data exists and is part of the neighbor set but missing, include it.
             let mut neighbor_isis_data_fallback: Vec<&IsIsData> = neighbor_isis_data_any_level;
             if let Some(dis) = dis_data.as_ref() {
-                if neighbor_lsp_ids.contains(&dis.lsp_id) {
+                if !dis.lsp_id.is_pseudonode()
+                    && dis
+                        .lsp_id
+                        .get_system_id()
+                        .ok()
+                        .is_some_and(|id| neighbor_system_ids.contains(&id))
+                {
                     // ensure uniqueness by lsp_id
                     let has_dis = neighbor_isis_data_fallback
                         .iter()
@@ -606,133 +629,4 @@ fn resolve_network_prefix(
     Err(ProtocolTopologyError::Semantic(
         "Couldn't resolve network's prefix".to_string(),
     ))
-}
-
-mod tests {
-    #[allow(unused)]
-    use super::*;
-    #[allow(unused)]
-    use crate::parsers::isis_parser::frr_json_lsp::JsonLsp;
-    #[allow(unused)]
-    use serde_json::json;
-
-    #[test]
-    fn test_lsp_to_router() {
-        let json = json!(
-            {
-              "lsp":{
-                "id":"r1.00-00",
-                "own":"*",
-                "ownLSP":true
-              },
-              "pduLen":101,
-              "seqNumber":"0x00000002",
-              "chksum":"0xb9a3",
-              "holdtime":1115,
-              "attPOl":"0/0/0",
-              "supportedProtocols":{
-                "0":"IPv4"
-              },
-              "areaAddr":"49.0001",
-              "hostname":"r1",
-              "teRouterId":"172.21.123.11",
-              "routerCapability":{
-                "id":"172.21.123.11",
-                "flagD":false,
-                "flagS":false
-              },
-              "segmentRoutingAlgorithm":{
-                "0":"SPF"
-              },
-              "extReach":[
-                {
-                  "mtId":"Extended",
-                  "id":"0000.0000.0001.64",
-                  "metric":10
-                },
-                {
-                  "mtId":"Extended",
-                  "id":"0000.0000.0001.5a",
-                  "metric":10
-                }
-              ],
-              "ipv4":"172.21.123.11",
-              "extIpReach":[
-                {
-                  "mtId":"Extended",
-                  "ipReach":"172.21.123.0/24",
-                  "ipReachMetric":10,
-                  "down":false
-                },
-                {
-                  "mtId":"Extended",
-                  "ipReach":"172.21.14.0/24",
-                  "ipReachMetric":10,
-                  "down":false
-                }
-              ]
-            }
-        );
-
-        let json_lsp: JsonLsp = serde_json::from_value(json).unwrap();
-        let map_input = include_str!("../../../test_data/isis_hostname_map_input.txt");
-
-        let hostname_map = HostnameMap::build_map_from_lines(map_input.lines());
-
-        let proto = JsonIsisProtocol { hostname_map };
-        let lsp = json_lsp.try_into_lsp(1, &proto.hostname_map).unwrap();
-        let parsed = proto.item_to_node(lsp).unwrap();
-
-        assert!(parsed.is_some());
-        let parsed = parsed.unwrap();
-        assert!(matches!(parsed.info, NodeInfo::Router(_)));
-
-        println!("Parsed ISIS node: {:#?}", parsed);
-    }
-
-    #[test]
-    fn test_lsp_to_network() {
-        let json = json!(
-            {
-              "lsp":{
-                "id":"r1.5a-00",
-                "own":"*",
-                "ownLSP":true
-              },
-              "pduLen":51,
-              "seqNumber":"0x00000001",
-              "chksum":"0x462b",
-              "holdtime":1058,
-              "attPOl":"0/0/0",
-              "extReach":[
-                {
-                  "mtId":"Extended",
-                  "id":"0000.0000.0001.00",
-                  "metric":0
-                },
-                {
-                  "mtId":"Extended",
-                  "id":"0000.0000.0004.00",
-                  "metric":0
-                }
-              ]
-            }
-        );
-
-        let json_lsp: JsonLsp = serde_json::from_value(json).unwrap();
-        let map_input = include_str!("../../../test_data/isis_hostname_map_input.txt");
-
-        let hostname_map = HostnameMap::build_map_from_lines(map_input.lines());
-
-        let proto = JsonIsisProtocol { hostname_map };
-        let lsp = json_lsp.try_into_lsp(1, &proto.hostname_map).unwrap();
-        let parsed = proto.item_to_node(lsp).unwrap();
-
-        assert!(parsed.is_some());
-        let parsed = parsed.unwrap();
-
-        assert!(matches!(parsed.info, NodeInfo::Network(_)));
-
-        println!("Parsed ISIS network: {:#?}", parsed);
-    }
 }

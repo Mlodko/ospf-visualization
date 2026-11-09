@@ -1,18 +1,21 @@
 use crate::{
+    adapters::packets::ospf::lsa::Lsa as CanonicalLsa,
     network::node::{
-        Node, NodeInfo, OspfAdvertisement, OspfData, OspfPayload, OspfRouterPayload, OspfVirtualLink, PerAreaRouterFacet, ProtocolData
+        Node, NodeInfo, OspfAdvertisement, OspfData, OspfRouterPayload,
+        OspfVirtualLink, PerAreaRouterFacet, ProtocolData,
     },
-    parsers::ospf_parser::source::OspfRawRow, topology::protocol::ProtocolTopologyError,
+    parsers::ospf_parser::source::OspfRawRow,
+    topology::protocol::ProtocolTopologyError,
 };
 use ipnetwork::IpNetwork;
 use ospf_parser::{
     OspfLinkStateAdvertisement, OspfNetworkLinksAdvertisement, OspfRouterLinksAdvertisement,
 };
-use thiserror::Error;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
+use thiserror::Error;
 
 use nom_derive::Parse;
 
@@ -43,19 +46,23 @@ impl Into<ProtocolTopologyError> for LsaError {
         let description = self.to_string();
         use LsaError::*;
         match self {
-            InvalidLsaType | InvalidNetworkMask(_) | WrongSnmpTable => ProtocolTopologyError::Semantic(description),
-            ProtocolNotImplemented | IncompleteData | WrongDataType => ProtocolTopologyError::Conversion(description)
+            InvalidLsaType | InvalidNetworkMask(_) | WrongSnmpTable => {
+                ProtocolTopologyError::Semantic(description)
+            }
+            ProtocolNotImplemented | IncompleteData | WrongDataType => {
+                ProtocolTopologyError::Conversion(description)
+            }
         }
     }
 }
 
 #[derive(Debug)]
 pub struct OspfLsdbEntry {
-    area_id: Ipv4Addr,
+    area_id: Option<Ipv4Addr>,
     link_state_id: Ipv4Addr,
     router_id: Ipv4Addr,
     advertisement: Arc<OspfLinkStateAdvertisement>,
-    raw_lsa_bytes: Arc<Vec<u8>>
+    raw_lsa_bytes: Arc<Vec<u8>>,
 }
 
 impl TryFrom<OspfRawRow> for OspfLsdbEntry {
@@ -68,11 +75,11 @@ impl TryFrom<OspfRawRow> for OspfLsdbEntry {
                 .1;
 
         Ok(OspfLsdbEntry {
-            area_id: row.area_id,
+            area_id: Some(row.area_id),
             link_state_id: row.link_state_id,
             router_id: row.router_id,
             advertisement: Arc::new(advertisement),
-            raw_lsa_bytes: Arc::new(row.lsa_bytes)
+            raw_lsa_bytes: Arc::new(row.lsa_bytes),
         })
     }
 }
@@ -85,6 +92,7 @@ impl TryInto<Node> for OspfLsdbEntry {
             OspfLinkStateAdvertisement::RouterLinks(_) => {
                 NodeInfo::Router(parse_lsa_type_1_to_router(&self)?)
             }
+
             OspfLinkStateAdvertisement::NetworkLinks(_) => {
                 NodeInfo::Network(parse_lsa_type_2_to_network(&self)?)
             }
@@ -96,13 +104,35 @@ impl TryInto<Node> for OspfLsdbEntry {
                 return Err(LsaError::InvalidLsaType);
             }
         };
-        
+
         let label = match &node_info {
             NodeInfo::Router(r) => r.id.as_string(),
-            NodeInfo::Network(n) => n.ip_address.to_string()
+            NodeInfo::Network(n) => n.ip_address.to_string(),
         };
 
         Ok(Node::new(node_info, Some(label)))
+    }
+}
+
+pub fn canonical_lsa_to_node(
+    area_id: Option<Ipv4Addr>,
+    lsa: CanonicalLsa,
+) -> Result<Option<Node>, LsaError> {
+    let advertisement = OspfLinkStateAdvertisement::parse(&lsa.raw)
+        .map_err(|_| LsaError::WrongDataType)?
+        .1;
+    let entry = OspfLsdbEntry {
+        area_id,
+        link_state_id: Ipv4Addr::from(lsa.header.ls_id.value.0),
+        router_id: Ipv4Addr::from(lsa.header.adv_router.value.0),
+        advertisement: Arc::new(advertisement),
+        raw_lsa_bytes: Arc::new(lsa.raw),
+    };
+
+    match entry.try_into() {
+        Ok(node) => Ok(Some(node)),
+        Err(LsaError::InvalidLsaType) => Ok(None),
+        Err(error) => Err(error),
     }
 }
 
@@ -143,7 +173,7 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
                     peer_router_id: RouterId::Ipv4(link.link_id()),
                 };
                 virtual_links.push(link);
-            },
+            }
             _ => {}
         }
     }
@@ -167,19 +197,24 @@ pub fn parse_lsa_type_1_to_router(lsa: &OspfLsdbEntry) -> Result<Router, LsaErro
         stub_link_count,
         virtual_link_count,
         link_metrics,
-        per_area_facets: vec![PerAreaRouterFacet {
-            area_id: lsa.area_id,
-            p2p_link_count,
-            transit_link_count,
-            stub_link_count,
-            virtual_link_count
-        }],
+        per_area_facets: lsa
+            .area_id
+            .map(|area_id| PerAreaRouterFacet {
+                area_id,
+                p2p_link_count,
+                transit_link_count,
+                stub_link_count,
+                virtual_link_count,
+            })
+            .into_iter()
+            .collect(),
         virtual_links,
     };
 
     let checksum = Some(advertisement.header.ls_checksum);
-    
-    let base_advertisement = OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
+
+    let base_advertisement =
+        OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
 
     let ospf_data: OspfData = OspfData {
         ls_seq_no: advertisement.header.ls_seq_number,
@@ -216,8 +251,9 @@ pub fn parse_lsa_type_2_to_network(lsa: &OspfLsdbEntry) -> Result<Network, LsaEr
         IpAddr::V4(advertisement.network_mask()),
     )
     .map_err(|_| LsaError::InvalidNetworkMask(advertisement.network_mask()))?;
-    
-    let base_advertisement = OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
+
+    let base_advertisement =
+        OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
 
     let protocol_data = ProtocolData::Ospf(OspfData {
         ls_seq_no: advertisement.header.ls_seq_number,
@@ -260,8 +296,9 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
         IpAddr::V4(adv.network_mask()),
     )
     .map_err(|_| LsaError::InvalidNetworkMask(adv.network_mask()))?;
-    
-    let base_advertisement = OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
+
+    let base_advertisement =
+        OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
 
     let protocol_data = ProtocolData::Ospf(OspfData {
         ls_seq_no: adv.header.ls_seq_number,
@@ -277,7 +314,7 @@ pub fn parse_lsa_type_3(lsa: &OspfLsdbEntry) -> Result<Network, LsaError> {
             crate::network::node::OspfSummaryNetPayload {
                 metric: adv.metric as u32,
                 origin_abr: RouterId::Ipv4(lsa.router_id),
-            }
+            },
         ),
     });
 
@@ -297,34 +334,34 @@ fn parse_lsa_type_4(lsa: &OspfLsdbEntry) -> Result<Router, LsaError> {
     } else {
         return Err(LsaError::InvalidLsaType);
     };
-    
+
     let base_advertisement = OspfAdvertisement::new(lsa.advertisement.clone(), lsa.raw_lsa_bytes.clone());
     let header = &adv.header;
-    
-    let payload = OspfPayload::Router(OspfRouterPayload { 
-        is_abr: (), 
-        is_asbr: (), 
-        is_virtual_link_endpoint: (), 
-        is_nssa_capable: (), 
-        p2p_link_count: (), 
-        transit_link_count: (), 
-        stub_link_count: (), 
-        virtual_link_count: (), 
-        link_metrics: (), 
-        per_area_facets: (), 
-        virtual_links: () 
+
+    let payload = OspfPayload::Router(OspfRouterPayload {
+        is_abr: (),
+        is_asbr: (),
+        is_virtual_link_endpoint: (),
+        is_nssa_capable: (),
+        p2p_link_count: (),
+        transit_link_count: (),
+        stub_link_count: (),
+        virtual_link_count: (),
+        link_metrics: (),
+        per_area_facets: (),
+        virtual_links: ()
     });
-    
-    let protocol_data = ProtocolData::Ospf(OspfData { 
-        area_id: lsa.area_id, 
-        base_advertisement, 
-        merged_advertisements: vec![], 
-        ls_age: header.ls_age, 
-        ls_seq_no: header.ls_seq_number, 
-        link_state_id: header.link_state_id(), 
-        advertising_router: header.advertising_router(), 
-        checksum: header.ls_checksum, 
-        payload: () 
+
+    let protocol_data = ProtocolData::Ospf(OspfData {
+        area_id: lsa.area_id,
+        base_advertisement,
+        merged_advertisements: vec![],
+        ls_age: header.ls_age,
+        ls_seq_no: header.ls_seq_number,
+        link_state_id: header.link_state_id(),
+        advertising_router: header.advertising_router(),
+        checksum: header.ls_checksum,
+        payload: ()
     });
 }
 */
@@ -332,13 +369,36 @@ fn parse_lsa_type_4(lsa: &OspfLsdbEntry) -> Result<Router, LsaError> {
 #[cfg(test)]
 mod tests {
 
-    use crate::data_aquisition::snmp::SnmpClient;
+    use crate::data_acquisition::transport::snmp::SnmpClient;
     use crate::parsers::ospf_parser::snmp_source::OspfSnmpSource;
     use crate::parsers::ospf_parser::source::OspfDataSource;
 
     use super::*;
 
+    #[test]
+    fn canonical_lsa_converts_to_node() {
+        let line = include_str!("../../adapters/packets/ospf/resources/lsa_dump")
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap();
+        let bytes = hex::decode(line.split_whitespace().collect::<String>()).unwrap();
+        let (_, lsa) = crate::adapters::packets::ospf::lsa::Lsa::parse(&bytes).unwrap();
+
+        let node = canonical_lsa_to_node(Some("0.0.0.0".parse().unwrap()), lsa)
+            .unwrap()
+            .unwrap();
+
+        assert!(matches!(
+            node.info,
+            crate::network::node::NodeInfo::Router(_) | crate::network::node::NodeInfo::Network(_)
+        ));
+    }
+
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_parse_lsas_to_lsdb_entries() {
         let client = SnmpClient::new(
             "127.0.0.1:1161".parse().unwrap(),
@@ -368,6 +428,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(feature = "live-snmp-tests"),
+        ignore = "requires --features live-snmp-tests and a local SNMP agent on 127.0.0.1:1161"
+    )]
     async fn test_parse_to_nodes() {
         let client = SnmpClient::new(
             "127.0.0.1:1161".parse().unwrap(),

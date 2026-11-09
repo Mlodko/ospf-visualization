@@ -1,0 +1,3 @@
+[submodule "submodules/gnmi"]
+	path = submodules/gnmi
+	url = https://github.com/openconfig/gnmi

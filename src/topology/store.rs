@@ -20,7 +20,9 @@ use crate::{
 use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet}, fmt::{Display, Formatter}, net::IpAddr, time::SystemTime
+    collections::{HashMap, HashSet},
+    net::IpAddr,
+    time::SystemTime,
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -79,6 +81,7 @@ pub struct SourceState {
     pub last_snapshot: SystemTime, // when we last replaced the snapshot successfully
     pub last_connected: SystemTime, // when acquisition last succeeded
     pub last_status_change: SystemTime, // when health last changed
+    #[serde(default)]
     pub interface_stats: Vec<InterfaceStats>,
 }
 impl SourceState {
@@ -93,11 +96,19 @@ impl SourceState {
             interface_stats,
         }
     }
-    
+
     /// Returns the relative weight of the interface with the given IP address as compared to all other interfaces. Returns a float between 0 and 1.
     pub fn get_interface_weight(&self, ip_address: IpAddr) -> Option<f32> {
-        let if_weight = self.interface_stats.iter().find(|stat| stat.ip_address == ip_address).map(|stat| stat.get_weight())?;
-        let total_weight: u64 = self.interface_stats.iter().map(|stat| stat.get_weight()).sum();
+        let if_weight = self
+            .interface_stats
+            .iter()
+            .find(|stat| stat.ip_address == ip_address)
+            .map(|stat| stat.get_weight())?;
+        let total_weight: u64 = self
+            .interface_stats
+            .iter()
+            .map(|stat| stat.get_weight())
+            .sum();
         Some((if_weight as f32 / total_weight as f32).clamp(0.0, 1.0))
     }
 }
@@ -132,7 +143,7 @@ impl Default for MergeConfig {
     }
 }
 pub enum AvailableFederators {
-    Ospf(OspfFederator)
+    Ospf(OspfFederator),
 }
 
 impl AvailableFederators {
@@ -151,7 +162,6 @@ impl ToString for AvailableFederators {
         }
     }
 }
-
 
 #[allow(unused)]
 impl MergeConfig {
@@ -253,8 +263,10 @@ impl TopologyStore {
                 state.last_status_change = timestamp; // optional: only if you want “Connected” flips to count
             }
             None => {
-                self.sources
-                    .insert(src_id.clone(), SourceState::new(part, source_if_stats, timestamp));
+                self.sources.insert(
+                    src_id.clone(),
+                    SourceState::new(part, source_if_stats, timestamp),
+                );
             }
         }
     }
@@ -276,7 +288,7 @@ impl TopologyStore {
                     last_snapshot: timestamp,
                     last_connected: timestamp,
                     last_status_change: timestamp,
-                    interface_stats: Vec::new()
+                    interface_stats: Vec::new(),
                 },
             );
         }
@@ -367,6 +379,7 @@ impl TopologyStore {
     }
 }
 
+#[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
     use std::net::Ipv4Addr;
